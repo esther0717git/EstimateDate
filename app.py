@@ -20,63 +20,34 @@ with open("sample_template.xlsx", "rb") as f:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-# ───── Streamlit UI: Upload ─────────────────────────────────────────────────────
+# ───── Upload Your Excel ──────────────────────────────────────────────────────
 uploaded = st.file_uploader("📁 Upload your Excel file", type=["xlsx"])
 
-# ───── Delivery Estimate ─────────────────────────────────────────────────────
-st.markdown("### 📦 Estimate Clearance Date")
+# ───── Estimate Clearance Date (below uploader) ──────────────────────────────
+# Display current Singapore time, formatted like "Friday 11 July, 1:24PM"
 now = datetime.now(ZoneInfo("Asia/Singapore"))
-st.write(f"**Today is:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
+formatted_now = now.strftime("%A %d %B, %I:%M%p").lstrip("0")
+st.markdown("### 📦 Estimate Clearance Date")
+st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    # determine “submission” date
+    # Determine “submission” date (bump to next day if 3PM or later)
     sub_date = now.date()
-    # if after 3 PM, treat as next day
     if now.hour >= 15:
         sub_date += timedelta(days=1)
 
-    # add two _working_ days
+    # Add two working days (skip weekends)
     days_added = 0
     current = sub_date
     while days_added < 2:
         current += timedelta(days=1)
-        # Mon–Fri are weekday() 0–4
-        if current.weekday() < 5:
+        if current.weekday() < 5:  # Mon–Fri are 0–4
             days_added += 1
 
     st.success(f"✓ Earliest clearance: **{current.strftime('%Y-%m-%d')}**")
     st.info(
         f"- Submitted on: {sub_date.strftime('%Y-%m-%d')}\n"
         f"- 2 working days → {current.strftime('%Y-%m-%d')}"
-    )
-
-# ───── Streamlit UI: Download Cleaned Output ──────────────────────────────────
-if uploaded:
-    # 1) Read the "Visitor List" sheet
-    raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
-
-    # 2) Capture Company Name in cell C2
-    company_cell = raw_df.iloc[0, 2]
-    company = (
-        str(company_cell).strip()
-        if pd.notna(company_cell) and str(company_cell).strip()
-        else "VisitorList"
-    )
-
-    # 3) Clean & generate output
-    cleaned = clean_data(raw_df)
-    out_buf = generate_visitor_only(cleaned)
-
-    # 4) Build filename with Singapore date
-    today = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
-    fname = f"{company}_{today}.xlsx"
-
-    # 5) Serve download
-    st.download_button(
-        label="📥 Download Cleaned Visitor List",
-        data=out_buf.getvalue(),
-        file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 # ───── Helper functions ────────────────────────────────────────────────────────
@@ -95,14 +66,12 @@ def nationality_group(row):
     else:
         return 5
 
-
 def split_name(full_name):
     s = str(full_name).strip()
     if " " in s:
         i = s.find(" ")
         return pd.Series([s[:i], s[i+1:]])
     return pd.Series([s, ""])
-
 
 def clean_gender(g):
     v = str(g).strip().upper()
@@ -114,8 +83,10 @@ def clean_gender(g):
         return v.title()
     return v
 
+# ───── Core Cleaning Logic ────────────────────────────────────────────────────
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    # 1) Trim to exactly 13 cols then rename
     df = df.iloc[:, :13]
     df.columns = [
         "S/N",
@@ -132,7 +103,11 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         "Gender",
         "Mobile Number",
     ]
+
+    # 2) Drop rows where all of D–M are blank
     df = df.dropna(subset=df.columns[3:13], how="all")
+
+    # 3) Normalize nationality
     nat_map = {
         "chinese":     "China",
         "singaporean": "Singapore",
@@ -147,6 +122,8 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .replace(nat_map, regex=False)
           .str.title()
     )
+
+    # 4) Sort
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = (
         df.sort_values(
@@ -155,7 +132,11 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         )
         .drop(columns="SortGroup")
     )
+
+    # 5) Reset S/N
     df["S/N"] = range(1, len(df) + 1)
+
+    # 6) Standardize Vehicle Plate Number
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
@@ -164,14 +145,22 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .str.strip()
           .replace("nan","", regex=False)
     )
+
+    # 7) Proper-case & split names
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
     df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = (
         df["Full Name As Per NRIC"].apply(split_name)
     )
+
+    # 8) Swap IC vs WP if reversed
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
+
+    # 9) Trim IC suffix
     df[iccol] = df[iccol].astype(str).str[-4:]
+
+    # 10) Fix Mobile Number
     def fix_mobile(x):
         d = re.sub(r"\D", "", str(x))
         if len(d) > 8:
@@ -183,56 +172,79 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         if len(d) < 8:
             d = d.zfill(8)
         return d
+
     df["Mobile Number"] = df["Mobile Number"].apply(fix_mobile)
+
+    # 11) Normalize gender
     df["Gender"] = df["Gender"].apply(clean_gender)
+
+    # 12) Format Work Permit Expiry Date → YYYY-MM-DD
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
+
     return df
 
+# ───── Build & style the single sheet Excel ────────────────────────────────────
 
 def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Visitor List")
         ws = writer.sheets["Visitor List"]
+
         header_fill  = PatternFill("solid", fgColor="94B455")
         warning_fill = PatternFill("solid", fgColor="FFCCCC")
         border       = Border(Side("thin"),Side("thin"),Side("thin"),Side("thin"))
         center       = Alignment("center","center")
         normal_font  = Font(name="Calibri", size=9)
         bold_font    = Font(name="Calibri", size=9, bold=True)
+
+        # 1) Borders, alignment, font
         for row in ws.iter_rows():
             for cell in row:
                 cell.border    = border
                 cell.alignment = center
                 cell.font      = normal_font
+
+        # 2) Header row styling
         for col in range(1, ws.max_column + 1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
             h.font = bold_font
+
+        # 3) Freeze top row
         ws.freeze_panes = ws["A2"]
+
+        # 4) Validation & highlight errors
         errors = 0
         for r in range(2, ws.max_row + 1):
             idt = str(ws[f"G{r}"].value).strip().upper()
             nat = str(ws[f"J{r}"].value).strip().title()
             pr  = str(ws[f"K{r}"].value).strip().lower()
             bad = False
+
             if idt != "NRIC" and pr in ("yes","y","pr"):
                 bad = True
             if idt == "FIN" and (nat == "Singapore" or pr in ("yes","y","pr")):
                 bad = True
             if idt == "NRIC" and not (nat == "Singapore" or pr in ("yes","y","pr")):
                 bad = True
+
             if bad:
                 for c in ("G","J","K"):
                     ws[f"{c}{r}"].fill = warning_fill
                 errors += 1
+
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
+
+        # 5) Auto-fit columns & set row height
         for col in ws.columns:
             w = max(len(str(cell.value)) for cell in col if cell.value)
             ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 20
+
+        # 6) Vehicles summary
         plates = []
         for v in df["Vehicle Plate Number"].dropna():
             plates += [x.strip() for x in str(v).split(";") if x.strip()]
@@ -245,11 +257,37 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             ws[f"B{ins+1}"].border  = border
             ws[f"B{ins+1}"].alignment = center
             ins += 2
+
+        # 7) Total Visitors
         ws[f"B{ins}"].value     = "Total Visitors"
         ws[f"B{ins}"].border    = border
         ws[f"B{ins}"].alignment = center
         ws[f"B{ins+1}"].value   = df["Company Full Name"].notna().sum()
         ws[f"B{ins+1}"].border  = border
         ws[f"B{ins+1}"].alignment = center
+
     buf.seek(0)
     return buf
+
+# ───── Streamlit UI: Read, Clean & Download ───────────────────────────────────
+if uploaded:
+    raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
+    company_cell = raw_df.iloc[0, 2]
+    company = (
+        str(company_cell).strip()
+        if pd.notna(company_cell) and str(company_cell).strip()
+        else "VisitorList"
+    )
+
+    cleaned = clean_data(raw_df)
+    out_buf = generate_visitor_only(cleaned)
+
+    today_str = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
+    fname = f"{company}_{today_str}.xlsx"
+
+    st.download_button(
+        label="📥 Download Cleaned Visitor List",
+        data=out_buf.getvalue(),
+        file_name=fname,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
