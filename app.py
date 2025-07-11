@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
 from openpyxl.utils import get_column_letter
@@ -10,6 +10,33 @@ from openpyxl.utils import get_column_letter
 # ───── Streamlit setup ────────────────────────────────────────────────────────
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE - VISITOR DATA CLEANING & VALIDATION 🫧")
+
+# ───── Delivery Estimate ─────────────────────────────────────────────────────
+st.markdown("### 📦 Estimate Clearance Date")
+now = datetime.now(ZoneInfo("Asia/Singapore"))
+st.write(f"**Today is:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
+
+if st.button("▶️ Calculate Estimated Delivery"):
+    # determine “submission” date
+    sub_date = now.date()
+    # if after 3 PM, treat as next day
+    if now.hour >= 15:
+        sub_date += timedelta(days=1)
+
+    # add two _working_ days
+    days_added = 0
+    current = sub_date
+    while days_added < 2:
+        current += timedelta(days=1)
+        # Mon–Fri are weekday() 0–4
+        if current.weekday() < 5:
+            days_added += 1
+
+    st.success(f"✓ Earliest clearance: **{current.strftime('%Y-%m-%d')}**")
+    st.info(
+        f"- Submitted on: {sub_date.strftime('%Y-%m-%d')}\n"
+        f"- 2 working days → {current.strftime('%Y-%m-%d')}"
+    )
 
 # ───── Download Sample Template ───────────────────────────────────────────────
 with open("sample_template.xlsx", "rb") as f:
@@ -130,19 +157,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     # 9) Trim IC suffix
     df[iccol] = df[iccol].astype(str).str[-4:]
 
-# 10) Fix Mobile Number back to the original 8 digits—
+    # 10) Fix Mobile Number back to the original 8 digits
     def fix_mobile(x):
         d = re.sub(r"\D", "", str(x))
-        # if too long...
         if len(d) > 8:
             extra = len(d) - 8
-            # if the extras are just decimal zeros, strip from the right
             if d.endswith("0" * extra):
                 d = d[:-extra]
             else:
-                # otherwise assume it's a country code and drop from the left
                 d = d[-8:]
-        # if too short, left-pad with zeros
         if len(d) < 8:
             d = d.zfill(8)
         return d
@@ -249,13 +272,13 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     buf.seek(0)
     return buf
 
-# ───── Streamlit UI: Upload & Download ────────────────────────────────────────
+# ───── Streamlit UI: Upload & Download ───────────────────────────────────────
 uploaded = st.file_uploader("📁 Upload your Excel file", type=["xlsx"])
 if uploaded:
     # 1) Read the "Visitor List" sheet
     raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
 
-    # 2) Capture Company Name in cell C2 (excel row 2, column C → pandas row 0, col 2)
+    # 2) Capture Company Name in cell C2
     company_cell = raw_df.iloc[0, 2]
     company = (
         str(company_cell).strip()
@@ -267,7 +290,7 @@ if uploaded:
     cleaned = clean_data(raw_df)
     out_buf = generate_visitor_only(cleaned)
 
-    # 4) Build filename: CompanyName_YYYYMMDD.xlsx in Asia/Singapore time
+    # 4) Build filename with Singapore date
     today = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
     fname = f"{company}_{today}.xlsx"
 
