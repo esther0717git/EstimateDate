@@ -20,6 +20,9 @@ with open("sample_template.xlsx", "rb") as f:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
+# ───── Streamlit UI: Upload ─────────────────────────────────────────────────────
+uploaded = st.file_uploader("📁 Upload your Excel file", type=["xlsx"])
+
 # ───── Delivery Estimate ─────────────────────────────────────────────────────
 st.markdown("### 📦 Estimate Clearance Date")
 now = datetime.now(ZoneInfo("Asia/Singapore"))
@@ -47,6 +50,35 @@ if st.button("▶️ Calculate Estimated Delivery"):
         f"- 2 working days → {current.strftime('%Y-%m-%d')}"
     )
 
+# ───── Streamlit UI: Download Cleaned Output ──────────────────────────────────
+if uploaded:
+    # 1) Read the "Visitor List" sheet
+    raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
+
+    # 2) Capture Company Name in cell C2
+    company_cell = raw_df.iloc[0, 2]
+    company = (
+        str(company_cell).strip()
+        if pd.notna(company_cell) and str(company_cell).strip()
+        else "VisitorList"
+    )
+
+    # 3) Clean & generate output
+    cleaned = clean_data(raw_df)
+    out_buf = generate_visitor_only(cleaned)
+
+    # 4) Build filename with Singapore date
+    today = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
+    fname = f"{company}_{today}.xlsx"
+
+    # 5) Serve download
+    st.download_button(
+        label="📥 Download Cleaned Visitor List",
+        data=out_buf.getvalue(),
+        file_name=fname,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
 # ───── Helper functions ────────────────────────────────────────────────────────
 
 def nationality_group(row):
@@ -63,7 +95,6 @@ def nationality_group(row):
     else:
         return 5
 
-# ... rest of your functions and UI logic unchanged ...
 
 def split_name(full_name):
     s = str(full_name).strip()
@@ -71,6 +102,7 @@ def split_name(full_name):
         i = s.find(" ")
         return pd.Series([s[:i], s[i+1:]])
     return pd.Series([s, ""])
+
 
 def clean_gender(g):
     v = str(g).strip().upper()
@@ -82,7 +114,6 @@ def clean_gender(g):
         return v.title()
     return v
 
-# ───── Core Cleaning Logic ────────────────────────────────────────────────────
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.iloc[:, :13]
@@ -157,7 +188,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
     return df
 
-# ───── Build & style the single sheet Excel ────────────────────────────────────
 
 def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     buf = BytesIO()
@@ -223,24 +253,3 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         ws[f"B{ins+1}"].alignment = center
     buf.seek(0)
     return buf
-
-# ───── Streamlit UI: Upload & Download ───────────────────────────────────────
-uploaded = st.file_uploader("📁 Upload your Excel file", type=["xlsx"])
-if uploaded:
-    raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
-    company_cell = raw_df.iloc[0, 2]
-    company = (
-        str(company_cell).strip()
-        if pd.notna(company_cell) and str(company_cell).strip()
-        else "VisitorList"
-    )
-    cleaned = clean_data(raw_df)
-    out_buf = generate_visitor_only(cleaned)
-    today = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
-    fname = f"{company}_{today}.xlsx"
-    st.download_button(
-        label="📥 Download Cleaned Visitor List",
-        data=out_buf.getvalue(),
-        file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
