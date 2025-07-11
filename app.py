@@ -217,3 +217,27 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         ws[f"B{ins+1}"].alignment = center
 
     buf.seek(0)
+    return buf
+
+if uploaded:
+    raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
+    company_cell = raw_df.iloc[0, 2]
+    company = (
+        str(company_cell).strip()
+        if pd.notna(company_cell) and str(company_cell).strip()
+        else "VisitorList"
+    )
+
+    cleaned = clean_data(raw_df)
+    out_buf = generate_visitor_only(cleaned)
+
+    today_str = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
+    fname = f"{company}_{today_str}.xlsx"
+
+    st.download_button(
+        label="📥 Download Cleaned Visitor List",
+        data=out_buf.getvalue(),
+        file_name=fname,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
