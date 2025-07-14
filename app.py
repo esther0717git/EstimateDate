@@ -57,7 +57,7 @@ if st.button("▶️ Calculate Estimated Delivery"):
     formatted_clearance = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
     st.success(f"✓ Earliest clearance: **{formatted_clearance}**")
 
-# ───── Helpers ────────────────────────────────────────────────────────────────
+# ───── Helper Functions ────────────────────────────────────────────────────────
 def nationality_group(row):
     nat = str(row["Nationality (Country Name)"]).strip().lower()
     pr  = str(row["PR"]).strip().lower()
@@ -97,7 +97,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    # Standardize nationality
+    # --- NEW: Normalize Company Full Name ---
+    # Any "PTE LTD" (case-insensitive) → "Pte Ltd"
+    df["Company Full Name"] = (
+        df["Company Full Name"]
+          .astype(str)
+          .str.replace(r"\bPTE\s+LTD\b", "Pte Ltd", flags=re.IGNORECASE, regex=True)
+    )
+
+    # Standardize Nationality
     nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
     df["Nationality (Country Name)"] = (
         df["Nationality (Country Name)"]
@@ -117,29 +125,22 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # Normalize PR (col K):  
-    #  yes/Y → PR  
-    #  n/No/NA → N  
-    #  blank stays blank  
-    #  else title-case
+    # Normalize PR (col K): yes/Y → PR, n/No/NA → N, blank stays blank, else Title-case
     df["PR"] = (
         df["PR"]
-          .astype(str)
-          .str.strip()
-          .str.lower()
-          .apply(lambda v: 
-             "PR" if v in ("yes","y") else
-             "N"  if v in ("n","no","na") else
-             ""   if v in ("","nan") else
-             v.title()
+          .astype(str).str.strip().str.lower()
+          .apply(lambda v:
+              "PR" if v in ("yes","y") else
+              "N"  if v in ("n","no","na") else
+              ""   if v in ("","nan") else
+              v.title()
           )
     )
 
     # Normalize Identification Type (col G): fin → FIN
     df["Identification Type"] = (
         df["Identification Type"]
-          .astype(str)
-          .str.strip()
+          .astype(str).str.strip()
           .apply(lambda v: "FIN" if v.lower() == "fin" else v)
     )
 
@@ -228,7 +229,6 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                     ws[f"{col}{r}"].fill = warning_fill
                 errors += 1
 
-            # FIN without expiry
             if idt == "FIN" and not wpd:
                 ws[f"I{r}"].fill = warning_fill
                 errors += 1
