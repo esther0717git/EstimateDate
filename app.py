@@ -131,7 +131,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .apply(lambda v: "PR" if v in ("yes","y") else v.title())
     )
 
-    # Normalize Identification Type: fin (any case) → FIN
+    # Normalize Identification Type: fin → FIN
     df["Identification Type"] = (
         df["Identification Type"]
           .astype(str)
@@ -139,23 +139,23 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .apply(lambda v: "FIN" if v.lower() == "fin" else v)
     )
 
-# ── Vehicle Plate formatting: replace / or , with “;”, collapse “;”, then remove ALL whitespace ──
+    # Vehicle Plate formatting: unify separators, then remove ALL spaces
     df["Vehicle Plate Number"] = (
-    df["Vehicle Plate Number"]
-      .astype(str)
-      .str.replace(r"[\/,]", ";", regex=True)
-      .str.replace(r"\s*;\s*", ";", regex=True)
-      .str.replace(r"\s+", "", regex=True)      # <-- remove spaces inside “GBF 8786H” → “GBF8786H”
-      .replace("nan", "", regex=False)
-)
+        df["Vehicle Plate Number"]
+          .astype(str)
+          .str.replace(r"[\/,]", ";", regex=True)
+          .str.replace(r"\s*;\s*", ";", regex=True)
+          .str.replace(r"\s+", "", regex=True)      # <-- remove spaces inside plates
+          .replace("nan","", regex=False)
+    )
 
     # Name splitting
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
     df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = (
-    df["Full Name As Per NRIC"].apply(split_name)
+        df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    # Swap IC / WP if swapped
+    # Swap IC / WP if needed
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
@@ -216,12 +216,9 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             wpd = str(ws[f"I{r}"].value).strip()
 
             bad = False
-            if idt != "NRIC" and pr in ("yes","y","pr"):
-                bad = True
-            if idt == "FIN" and (nat == "Singapore" or pr in ("yes","y","pr")):
-                bad = True
-            if idt == "NRIC" and not (nat == "Singapore" or pr in ("yes","y","pr")):
-                bad = True
+            if idt != "NRIC" and pr in ("pr",): bad = True
+            if idt == "FIN" and (nat == "Singapore" or pr in ("pr",)): bad = True
+            if idt == "NRIC" and not (nat == "Singapore" or pr in ("pr",)): bad = True
 
             if bad:
                 for col in ("G","J","K"):
