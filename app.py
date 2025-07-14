@@ -87,7 +87,6 @@ def clean_gender(g):
     return v
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    # Keep first 13 cols & rename
     df = df.iloc[:, :13]
     df.columns = [
         "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
@@ -97,7 +96,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    # Normalize Company Full Name: any "PTE LTD" → "Pte Ltd"
+    # Normalize Company Full Name
     df["Company Full Name"] = (
         df["Company Full Name"]
           .astype(str)
@@ -113,7 +112,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .str.title()
     )
 
-    # Sort & serial number
+    # Sort & S/N
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = (
         df.sort_values(
@@ -124,7 +123,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # Normalize PR: yes/Y → PR, n/No/NA → N, blank stays blank, else Title-case
+    # Normalize PR
     df["PR"] = (
         df["PR"]
           .astype(str).str.strip().str.lower()
@@ -136,15 +135,14 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           )
     )
 
-    # Normalize Identification Type: fin → FIN
+    # Normalize Identification Type
     df["Identification Type"] = (
         df["Identification Type"]
-          .astype(str)
-          .str.strip()
+          .astype(str).str.strip()
           .apply(lambda v: "FIN" if v.lower() == "fin" else v)
     )
 
-    # Vehicle Plate: unify separators, remove all spaces
+    # Vehicle Plate formatting
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
@@ -160,7 +158,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    # Swap IC/WP if misplaced
+    # Swap IC/WP if needed
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
@@ -236,7 +234,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Set each row’s height to 16.8
+        # Set row height
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
@@ -249,7 +247,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             letter = get_column_letter(column_cells[0].column)
             ws.column_dimensions[letter].width = max_length + 2
 
-        # Vehicles summary
+        # Vehicles summary (font size 9)
         plates = []
         for v in df["Vehicle Plate Number"].dropna():
             plates += [x.strip() for x in str(v).split(";") if x.strip()]
@@ -258,18 +256,22 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             ws[f"B{ins}"].value     = "Vehicles"
             ws[f"B{ins}"].border    = border
             ws[f"B{ins}"].alignment = center
+            ws[f"B{ins}"].font      = normal_font
             ws[f"B{ins+1}"].value   = ";".join(sorted(set(plates)))
             ws[f"B{ins+1}"].border  = border
             ws[f"B{ins+1}"].alignment = center
+            ws[f"B{ins+1}"].font    = normal_font
             ins += 2
 
-        # Total visitors
+        # Total visitors summary (font size 9)
         ws[f"B{ins}"].value     = "Total Visitors"
         ws[f"B{ins}"].border    = border
         ws[f"B{ins}"].alignment = center
+        ws[f"B{ins}"].font      = normal_font
         ws[f"B{ins+1}"].value   = df["Company Full Name"].notna().sum()
         ws[f"B{ins+1}"].border  = border
         ws[f"B{ins+1}"].alignment = center
+        ws[f"B{ins+1}"].font    = normal_font
 
     buf.seek(0)
     return buf
