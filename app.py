@@ -48,27 +48,30 @@ if st.button("▶️ Calculate Estimated Delivery"):
     else:
         submission_date = now.date()
 
-    # if submission_date is on weekend, bump to next Monday
-    if submission_date.weekday() >= 5:
-        submission_date += timedelta(days=(7 - submission_date.weekday()))
+# … after “if st.button(…)” …
 
-    # 2) Day 1 = submission_date (a working day)
-    day1 = submission_date
+# 1) Determine submission date
+if now.hour >= 15:
+    submission_date = now.date() + timedelta(days=1)
+else:
+    submission_date = now.date()
 
-    # 3) Day 2 = next working day after day1
-    day2 = day1 + timedelta(days=1)
-    while day2.weekday() >= 5:
-        day2 += timedelta(days=1)
+# 2) Count two working days
+working_days = 0
+current = submission_date
+while working_days < 2:
+    current += timedelta(days=1)
+    if current.weekday() < 5:
+        working_days += 1
 
-    # 4) Clearance date = the day after day2
-    clearance_date = day2 + timedelta(days=1)
-    #    and if that falls on Sat/Sun, push to Monday
-    while clearance_date.weekday() >= 5:
-        clearance_date += timedelta(days=1)
+# 3) Clearance = the next calendar day
+clearance = current + timedelta(days=1)
+while clearance.weekday() >= 5:  # if Sat/Sun, push to Mon
+    clearance += timedelta(days=1)
 
-    # Format as "Wednesday 16 July" (no leading zero on day)
-    formatted_clearance = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
-    st.success(f"✓ Earliest clearance: **{formatted_clearance}**")
+# display
+formatted = f"{clearance:%A} {clearance.day} {clearance:%B}"
+st.success(f"✓ Earliest clearance: **{formatted}**")
 
 
 # ───── Helper Functions ────────────────────────────────────────────────────────
