@@ -250,7 +250,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 
         for col in ws.columns:
             w = max(len(str(cell.value)) for cell in col if cell.value)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = w  # No +2
+            ws.column_dimensions[get_column_letter(col[0].column)].width = w + 1
 
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
