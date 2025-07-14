@@ -42,17 +42,14 @@ st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    # Determine if submission is before or after 3:00 PM cut-off
     if now.time() >= datetime.strptime("15:00", "%H:%M").time():
         effective_submission_date = now.date() + timedelta(days=1)
     else:
         effective_submission_date = now.date()
 
-    # If submission lands on weekend, push to next Monday
     while effective_submission_date.weekday() >= 5:
         effective_submission_date += timedelta(days=1)
 
-    # Count 2 working days from the effective submission date
     working_days_count = 0
     estimated_date = effective_submission_date
     while working_days_count < 2:
@@ -60,14 +57,10 @@ if st.button("▶️ Calculate Estimated Delivery"):
         if estimated_date.weekday() < 5:
             working_days_count += 1
 
-    # Final clearance date is after the 2 working days
     clearance_date = estimated_date
-
-    # If it falls on weekend, push to next Monday
     while clearance_date.weekday() >= 5:
         clearance_date += timedelta(days=1)
 
-    # Display result
     formatted = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
     st.success(f"✓ Earliest clearance: **{formatted}**")
 
@@ -101,8 +94,16 @@ def clean_gender(g):
     if v in ("MALE","FEMALE"): return v.title()
     return v
 
+def normalize_pr(value):
+    val = str(value).strip().lower()
+    if val in ("pr", "yes", "y"):
+        return "PR"
+    elif val in ("n", "no", "na", "", "nan"):
+        return ""
+    else:
+        return val.upper() if val.isalpha() else val
+
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    # Keep first 13 columns & rename
     df = df.iloc[:, :13]
     df.columns = [
         "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
@@ -112,14 +113,12 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    # Normalize "PTE LTD" → "Pte Ltd"
     df["Company Full Name"] = (
         df["Company Full Name"]
           .astype(str)
           .str.replace(r"\bPTE\s+LTD\b", "Pte Ltd", flags=re.IGNORECASE, regex=True)
     )
 
-    # Standardize Nationality
     nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
     df["Nationality (Country Name)"] = (
         df["Nationality (Country Name)"]
@@ -128,7 +127,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .str.title()
     )
 
-    # Sort & serial number
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = (
         df.sort_values(
@@ -139,28 +137,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
+    # 🔄 Apply updated PR normalization
+    df["PR"] = df["PR"].apply(normalize_pr)
 
-    # Normalize PR column (K)
-def normalize_pr(value):
-    val = str(value).strip().lower()
-    if val in ("pr", "yes", "y"):
-        return "PR"
-    elif val in ("n", "no", "na", "", "nan"):
-        return ""
-    else:
-        return val.upper() if val.isalpha() else val
-
-df["PR"] = df["PR"].apply(normalize_pr)
-
-
-    # Normalize Identification Type (G)
     df["Identification Type"] = (
         df["Identification Type"]
           .astype(str).str.strip()
           .apply(lambda v: "FIN" if v.lower() == "fin" else v.upper())
     )
 
-    # Vehicle Plate: unify separators, remove all spaces
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
@@ -170,19 +155,16 @@ df["PR"] = df["PR"].apply(normalize_pr)
           .replace("nan","", regex=False)
     )
 
-    # Split name
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
     df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = (
         df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    # Swap IC/WP if misplaced
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
     df[iccol] = df[iccol].astype(str).str[-4:]
 
-    # Clean mobile
     def fix_mobile(x):
         d = re.sub(r"\D", "", str(x))
         if len(d) > 8:
@@ -193,10 +175,7 @@ df["PR"] = df["PR"].apply(normalize_pr)
         return d
     df["Mobile Number"] = df["Mobile Number"].apply(fix_mobile)
 
-    # Clean gender
     df["Gender"] = df["Gender"].apply(clean_gender)
-
-    # Format WP date
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
