@@ -42,37 +42,37 @@ st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    # 1) Determine submission date
-# Determine if submission is before or after 3:00 PM cut-off
-if now.time() >= datetime.strptime("15:00", "%H:%M").time():
-    effective_submission_date = now.date() + timedelta(days=1)
-else:
-    effective_submission_date = now.date()
+    # Determine if submission is before or after 3:00 PM cut-off
+    if now.time() >= datetime.strptime("15:00", "%H:%M").time():
+        effective_submission_date = now.date() + timedelta(days=1)
+    else:
+        effective_submission_date = now.date()
 
-# If submission lands on weekend, push to next Monday
-while effective_submission_date.weekday() >= 5:
-    effective_submission_date += timedelta(days=1)
+    # If submission lands on weekend, push to next Monday
+    while effective_submission_date.weekday() >= 5:
+        effective_submission_date += timedelta(days=1)
 
-# Count 2 working days from the effective submission date
-working_days_count = 0
-estimated_date = effective_submission_date
-while working_days_count < 2:
-    estimated_date += timedelta(days=1)
-    if estimated_date.weekday() < 5:
-        working_days_count += 1
+    # Count 2 working days from the effective submission date
+    working_days_count = 0
+    estimated_date = effective_submission_date
+    while working_days_count < 2:
+        estimated_date += timedelta(days=1)
+        if estimated_date.weekday() < 5:
+            working_days_count += 1
 
-# Final clearance date is after the 2 working days
-clearance_date = estimated_date
+    # Final clearance date is after the 2 working days
+    clearance_date = estimated_date
 
-# If it falls on weekend, push to next Monday
-while clearance_date.weekday() >= 5:
-    clearance_date += timedelta(days=1)
+    # If it falls on weekend, push to next Monday
+    while clearance_date.weekday() >= 5:
+        clearance_date += timedelta(days=1)
 
-# Display result
-formatted = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
-st.success(f"✓ Earliest clearance: **{formatted}**")
+    # Display result
+    formatted = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
+    st.success(f"✓ Earliest clearance: **{formatted}**")
 
 # ───── Helper Functions ────────────────────────────────────────────────────────
+
 def nationality_group(row):
     nat = str(row["Nationality (Country Name)"]).strip().lower()
     pr  = str(row["PR"]).strip().lower()
@@ -212,21 +212,18 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         normal_font  = Font(name="Calibri", size=9)
         bold_font    = Font(name="Calibri", size=9, bold=True)
 
-        # Style all cells
         for row in ws.iter_rows():
             for cell in row:
-                cell.border    = border
+                cell.border = border
                 cell.alignment = center
-                cell.font      = normal_font
+                cell.font = normal_font
 
-        # Header row
         for col in range(1, ws.max_column + 1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
             h.font = bold_font
         ws.freeze_panes = ws["A2"]
 
-        # Validation
         errors = 0
         for r in range(2, ws.max_row + 1):
             idt = str(ws[f"G{r}"].value).strip().upper()
@@ -244,7 +241,6 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                     ws[f"{col}{r}"].fill = warning_fill
                 errors += 1
 
-            # FIN without WP date
             if idt == "FIN" and not wpd:
                 ws[f"I{r}"].fill = warning_fill
                 errors += 1
@@ -252,41 +248,37 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Auto‐fit columns
         for col in ws.columns:
             w = max(len(str(cell.value)) for cell in col if cell.value)
             ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
 
-        # Set row height to 16.8
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
-        # Vehicles summary
         plates = []
         for v in df["Vehicle Plate Number"].dropna():
             plates += [x.strip() for x in str(v).split(";") if x.strip()]
         ins = ws.max_row + 2
         if plates:
-            ws[f"B{ins}"].value     = "Vehicles"
-            ws[f"B{ins}"].font      = Font(size=9)
-            ws[f"B{ins}"].border    = border
+            ws[f"B{ins}"].value = "Vehicles"
+            ws[f"B{ins}"].font = Font(size=9)
+            ws[f"B{ins}"].border = border
             ws[f"B{ins}"].alignment = center
 
-            ws[f"B{ins+1}"].value   = ";".join(sorted(set(plates)))
-            ws[f"B{ins+1}"].font    = Font(size=9)
-            ws[f"B{ins+1}"].border  = border
+            ws[f"B{ins+1}"].value = ";".join(sorted(set(plates)))
+            ws[f"B{ins+1}"].font = Font(size=9)
+            ws[f"B{ins+1}"].border = border
             ws[f"B{ins+1}"].alignment = center
             ins += 2
 
-        # Total visitors
-        ws[f"B{ins}"].value     = "Total Visitors"
-        ws[f"B{ins}"].font      = Font(size=9)
-        ws[f"B{ins}"].border    = border
+        ws[f"B{ins}"].value = "Total Visitors"
+        ws[f"B{ins}"].font = Font(size=9)
+        ws[f"B{ins}"].border = border
         ws[f"B{ins}"].alignment = center
 
-        ws[f"B{ins+1}"].value   = df["Company Full Name"].notna().sum()
-        ws[f"B{ins+1}"].font    = Font(size=9)
-        ws[f"B{ins+1}"].border  = border
+        ws[f"B{ins+1}"].value = df["Company Full Name"].notna().sum()
+        ws[f"B{ins+1}"].font = Font(size=9)
+        ws[f"B{ins+1}"].border = border
         ws[f"B{ins+1}"].alignment = center
 
     buf.seek(0)
