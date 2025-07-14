@@ -139,15 +139,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .apply(lambda v: "FIN" if v.lower() == "fin" else v)
     )
 
-    # Vehicle Plate formatting
-    df["Vehicle Plate Number"] = (
-        df["Vehicle Plate Number"]
-          .astype(str)
-          .str.replace(r"[\/,]", ";", regex=True)
-          .str.replace(r"\s*;\s*", ";", regex=True)
-          .str.strip()
-          .replace("nan","", regex=False)
-    )
+# ── Vehicle Plate formatting: replace / or , with “;”, collapse “;”, then remove ALL whitespace ──
+df["Vehicle Plate Number"] = (
+    df["Vehicle Plate Number"]
+      .astype(str)
+      .str.replace(r"[\/,]", ";", regex=True)
+      .str.replace(r"\s*;\s*", ";", regex=True)
+      .str.replace(r"\s+", "", regex=True)      # <-- remove spaces inside “GBF 8786H” → “GBF8786H”
+      .replace("nan", "", regex=False)
+)
 
     # Name splitting
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
