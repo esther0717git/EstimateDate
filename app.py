@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE – VISITOR DATA CLEANING & VALIDATION 🫧")
 
-# ───── 1) Info Banner ──────────────────────────────────────────────────────────
+# ───── 1) Info Banner: Data Integrity Foundation ───────────────────────────────
 st.info(
     """
     **Data Integrity Is Our Foundation**  
@@ -42,20 +42,29 @@ st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
+    # 1) Determine submission date (bump if 3 PM+)
     sub_date = now.date()
     if now.hour >= 15:
         sub_date += timedelta(days=1)
+
+    # 2) Count two working days, skipping weekends
     days_added = 0
     current = sub_date
     while days_added < 2:
         current += timedelta(days=1)
-        if current.weekday() < 5:
+        if current.weekday() < 5:  # Mon=0 … Fri=4
             days_added += 1
+
+    # 3) Clearance = the day *after* the 2nd working day
     clearance_date = current + timedelta(days=1)
+    #    and if that lands on Sat/Sun, push to Monday
     while clearance_date.weekday() >= 5:
         clearance_date += timedelta(days=1)
+
+    # Format as "Wednesday 17 July" (no leading zero on day)
     formatted_clearance = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
     st.success(f"✓ Earliest clearance: **{formatted_clearance}**")
+
 
 # ───── Helper Functions ────────────────────────────────────────────────────────
 def nationality_group(row):
@@ -87,6 +96,7 @@ def clean_gender(g):
     return v
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    # Keep first 13 columns & rename
     df = df.iloc[:, :13]
     df.columns = [
         "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
@@ -96,7 +106,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    # Normalize Company Full Name
+    # Normalize "PTE LTD" → "Pte Ltd"
     df["Company Full Name"] = (
         df["Company Full Name"]
           .astype(str)
@@ -112,7 +122,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .str.title()
     )
 
-    # Sort & S/N
+    # Sort & serial number
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = (
         df.sort_values(
@@ -123,7 +133,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # Normalize PR
+    # Normalize PR column (K)
     df["PR"] = (
         df["PR"]
           .astype(str).str.strip().str.lower()
@@ -135,14 +145,14 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           )
     )
 
-    # Normalize Identification Type
+    # Normalize Identification Type (G)
     df["Identification Type"] = (
         df["Identification Type"]
           .astype(str).str.strip()
-          .apply(lambda v: "FIN" if v.lower() == "fin" else v)
+          .apply(lambda v: "FIN" if v.lower() == "fin" else v.upper())
     )
 
-    # Vehicle Plate formatting
+    # Vehicle Plate: unify separators, remove all spaces
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
@@ -158,13 +168,13 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    # Swap IC/WP if needed
+    # Swap IC/WP if misplaced
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
     df[iccol] = df[iccol].astype(str).str[-4:]
 
-    # Mobile cleanup
+    # Clean mobile
     def fix_mobile(x):
         d = re.sub(r"\D", "", str(x))
         if len(d) > 8:
@@ -175,10 +185,10 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         return d
     df["Mobile Number"] = df["Mobile Number"].apply(fix_mobile)
 
-    # Gender cleanup
+    # Clean gender
     df["Gender"] = df["Gender"].apply(clean_gender)
 
-    # WP date formatting
+    # Format WP date
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
@@ -196,20 +206,21 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         normal_font  = Font(name="Calibri", size=9)
         bold_font    = Font(name="Calibri", size=9, bold=True)
 
-        # Style cells
+        # Style all cells
         for row in ws.iter_rows():
             for cell in row:
                 cell.border    = border
                 cell.alignment = center
                 cell.font      = normal_font
 
-        # Header
+        # Header row
         for col in range(1, ws.max_column + 1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
             h.font = bold_font
         ws.freeze_panes = ws["A2"]
 
+        # Validation
         errors = 0
         for r in range(2, ws.max_row + 1):
             idt = str(ws[f"G{r}"].value).strip().upper()
@@ -218,15 +229,16 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             wpd = str(ws[f"I{r}"].value).strip()
 
             bad = False
-            if idt != "NRIC" and pr in ("pr",): bad = True
-            if idt == "FIN" and (nat == "Singapore" or pr in ("pr",)): bad = True
-            if idt == "NRIC" and not (nat == "Singapore" or pr in ("pr",)): bad = True
+            if idt != "NRIC" and pr == "pr": bad = True
+            if idt == "FIN" and (nat == "Singapore" or pr == "pr"): bad = True
+            if idt == "NRIC" and not (nat == "Singapore" or pr == "pr"): bad = True
 
             if bad:
                 for col in ("G","J","K"):
                     ws[f"{col}{r}"].fill = warning_fill
                 errors += 1
 
+            # FIN without WP date
             if idt == "FIN" and not wpd:
                 ws[f"I{r}"].fill = warning_fill
                 errors += 1
@@ -234,44 +246,42 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Set row height
+        # Auto‐fit columns
+        for col in ws.columns:
+            w = max(len(str(cell.value)) for cell in col if cell.value)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
+
+        # Set row height to 16.8
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
-        # Auto-fit column widths
-        for column_cells in ws.columns:
-            max_length = max(
-                len(str(cell.value)) if cell.value not in (None, "") else 0
-                for cell in column_cells
-            )
-            letter = get_column_letter(column_cells[0].column)
-            ws.column_dimensions[letter].width = max_length + 2
-
-        # Vehicles summary (font size 9)
+        # Vehicles summary
         plates = []
         for v in df["Vehicle Plate Number"].dropna():
             plates += [x.strip() for x in str(v).split(";") if x.strip()]
         ins = ws.max_row + 2
         if plates:
             ws[f"B{ins}"].value     = "Vehicles"
+            ws[f"B{ins}"].font      = Font(size=9)
             ws[f"B{ins}"].border    = border
             ws[f"B{ins}"].alignment = center
-            ws[f"B{ins}"].font      = normal_font
+
             ws[f"B{ins+1}"].value   = ";".join(sorted(set(plates)))
+            ws[f"B{ins+1}"].font    = Font(size=9)
             ws[f"B{ins+1}"].border  = border
             ws[f"B{ins+1}"].alignment = center
-            ws[f"B{ins+1}"].font    = normal_font
             ins += 2
 
-        # Total visitors summary (font size 9)
+        # Total visitors
         ws[f"B{ins}"].value     = "Total Visitors"
+        ws[f"B{ins}"].font      = Font(size=9)
         ws[f"B{ins}"].border    = border
         ws[f"B{ins}"].alignment = center
-        ws[f"B{ins}"].font      = normal_font
+
         ws[f"B{ins+1}"].value   = df["Company Full Name"].notna().sum()
+        ws[f"B{ins+1}"].font    = Font(size=9)
         ws[f"B{ins+1}"].border  = border
         ws[f"B{ins+1}"].alignment = center
-        ws[f"B{ins+1}"].font    = normal_font
 
     buf.seek(0)
     return buf
@@ -302,3 +312,4 @@ if uploaded:
     st.caption(
         "✅ Your data has been validated. Please double-check critical fields before sharing with security teams."
     )
+
