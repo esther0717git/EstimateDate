@@ -122,6 +122,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
+    # Normalize PR column: yes/Y → PR, others → Title-case
+    df["PR"] = (
+        df["PR"]
+          .astype(str)
+          .str.strip()
+          .str.lower()
+          .apply(lambda v: "PR" if v in ("yes", "y") else v.title())
+    )
+    
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
