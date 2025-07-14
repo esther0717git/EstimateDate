@@ -152,7 +152,7 @@ df["Vehicle Plate Number"] = (
     # Name splitting
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
     df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = (
-        df["Full Name As Per NRIC"].apply(split_name)
+    df["Full Name As Per NRIC"].apply(split_name)
     )
 
     # Swap IC / WP if swapped
