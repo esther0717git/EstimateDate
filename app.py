@@ -43,36 +43,34 @@ st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
     # 1) Determine submission date
-    if now.hour >= 15:
-        submission_date = now.date() + timedelta(days=1)
-    else:
-        submission_date = now.date()
-
-# … after “if st.button(…)” …
-
-# 1) Determine submission date
-if now.hour >= 15:
-    submission_date = now.date() + timedelta(days=1)
+# Determine if submission is before or after 3:00 PM cut-off
+if now.time() >= datetime.strptime("15:00", "%H:%M").time():
+    effective_submission_date = now.date() + timedelta(days=1)
 else:
-    submission_date = now.date()
+    effective_submission_date = now.date()
 
-# 2) Count two working days
-working_days = 0
-current = submission_date
-while working_days < 2:
-    current += timedelta(days=1)
-    if current.weekday() < 5:
-        working_days += 1
+# If submission lands on weekend, push to next Monday
+while effective_submission_date.weekday() >= 5:
+    effective_submission_date += timedelta(days=1)
 
-# 3) Clearance = the next calendar day
-clearance = current + timedelta(days=1)
-while clearance.weekday() >= 5:  # if Sat/Sun, push to Mon
-    clearance += timedelta(days=1)
+# Count 2 working days from the effective submission date
+working_days_count = 0
+estimated_date = effective_submission_date
+while working_days_count < 2:
+    estimated_date += timedelta(days=1)
+    if estimated_date.weekday() < 5:
+        working_days_count += 1
 
-# display
-formatted = f"{clearance:%A} {clearance.day} {clearance:%B}"
+# Final clearance date is after the 2 working days
+clearance_date = estimated_date
+
+# If it falls on weekend, push to next Monday
+while clearance_date.weekday() >= 5:
+    clearance_date += timedelta(days=1)
+
+# Display result
+formatted = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
 st.success(f"✓ Earliest clearance: **{formatted}**")
-
 
 # ───── Helper Functions ────────────────────────────────────────────────────────
 def nationality_group(row):
