@@ -229,10 +229,30 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
+        # Set fixed column widths
+        column_widths = {
+            "A": 3.38,
+            "C": 23.06,
+            "D": 17.25,
+            "E": 17.63,
+            "F": 26.25,
+            "G": 13.94,
+            "H": 24.06,
+            "I": 18.38,
+            "J": 20.31,
+            "K": 4,
+            "L": 5.81,
+            "M": 11.5,
+        }
+        # B is dynamic (auto-fit based on max content)
         for col in ws.columns:
-            w = max(len(str(cell.value)) for cell in col if cell.value)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = w + 1
-
+            col_letter = get_column_letter(col[0].column)
+            if col_letter == "B":
+                width = max(len(str(cell.value)) for cell in col if cell.value)
+                ws.column_dimensions[col_letter].width = width
+            elif col_letter in column_widths:
+                ws.column_dimensions[col_letter].width = column_widths[col_letter]
+        
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
