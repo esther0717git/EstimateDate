@@ -57,7 +57,7 @@ if st.button("▶️ Calculate Estimated Delivery"):
     formatted_clearance = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
     st.success(f"✓ Earliest clearance: **{formatted_clearance}**")
 
-# ───── Helper Functions ────────────────────────────────────────────────────────
+# ───── Helpers ────────────────────────────────────────────────────────────────
 def nationality_group(row):
     nat = str(row["Nationality (Country Name)"]).strip().lower()
     pr  = str(row["PR"]).strip().lower()
@@ -87,7 +87,7 @@ def clean_gender(g):
     return v
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    # Keep only first 13 columns
+    # Keep first 13 cols & rename
     df = df.iloc[:, :13]
     df.columns = [
         "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
@@ -97,7 +97,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    # Standardize Nationality
+    # Standardize nationality
     nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
     df["Nationality (Country Name)"] = (
         df["Nationality (Country Name)"]
@@ -106,7 +106,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .str.title()
     )
 
-    # Sort & Serial Number
+    # Sort & serial number
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = (
         df.sort_values(
@@ -117,13 +117,22 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # Normalize PR (col K): yes/Y → PR, blank stays blank, else Title-case
+    # Normalize PR (col K):  
+    #  yes/Y → PR  
+    #  n/No/NA → N  
+    #  blank stays blank  
+    #  else title-case
     df["PR"] = (
         df["PR"]
           .astype(str)
           .str.strip()
           .str.lower()
-          .apply(lambda v: "PR" if v in ("yes","y") else ("" if v in ("", "nan") else v.title()))
+          .apply(lambda v: 
+             "PR" if v in ("yes","y") else
+             "N"  if v in ("n","no","na") else
+             ""   if v in ("","nan") else
+             v.title()
+          )
     )
 
     # Normalize Identification Type (col G): fin → FIN
@@ -134,7 +143,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .apply(lambda v: "FIN" if v.lower() == "fin" else v)
     )
 
-    # Vehicle Plate formatting: unify separators, remove all spaces
+    # Vehicle Plate: unify separators, remove all spaces
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
@@ -144,13 +153,13 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .replace("nan","", regex=False)
     )
 
-    # Name splitting
+    # Split name
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
     df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = (
         df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    # Swap IC / WP if misplaced
+    # Swap IC/WP if misplaced
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
@@ -170,7 +179,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     # Gender cleanup
     df["Gender"] = df["Gender"].apply(clean_gender)
 
-    # Format Work Permit Expiry Date
+    # WP date formatting
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
@@ -188,14 +197,14 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         normal_font  = Font(name="Calibri", size=9)
         bold_font    = Font(name="Calibri", size=9, bold=True)
 
-        # Style all cells
+        # Style cells
         for row in ws.iter_rows():
             for cell in row:
                 cell.border    = border
                 cell.alignment = center
                 cell.font      = normal_font
 
-        # Header styling
+        # Header
         for col in range(1, ws.max_column + 1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
@@ -219,7 +228,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                     ws[f"{col}{r}"].fill = warning_fill
                 errors += 1
 
-            # FIN without expiry date
+            # FIN without expiry
             if idt == "FIN" and not wpd:
                 ws[f"I{r}"].fill = warning_fill
                 errors += 1
@@ -227,7 +236,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Auto-size columns & rows
+        # Auto-size
         for col in ws.columns:
             w = max(len(str(cell.value)) for cell in col if cell.value)
             ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
