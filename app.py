@@ -139,17 +139,19 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
+
     # Normalize PR column (K)
-    df["PR"] = (
-        df["PR"]
-          .astype(str).str.strip().str.lower()
-          .apply(lambda v:
-              "PR" if v in ("yes","y") else
-              "N"  if v in ("n","no","na") else
-              ""   if v in ("","nan") else
-              v.title()
-          )
-    )
+def normalize_pr(value):
+    val = str(value).strip().lower()
+    if val in ("pr", "yes", "y"):
+        return "PR"
+    elif val in ("n", "no", "na", "", "nan"):
+        return ""
+    else:
+        return val.upper() if val.isalpha() else val
+
+df["PR"] = df["PR"].apply(normalize_pr)
+
 
     # Normalize Identification Type (G)
     df["Identification Type"] = (
