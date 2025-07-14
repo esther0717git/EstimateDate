@@ -187,7 +187,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         ws = writer.sheets["Visitor List"]
 
         header_fill  = PatternFill("solid", fgColor="94B455")
-        warning_fill = PatternFill("solid", fgColor="FFCCCC")
+        warning_fill = PatternFill("solid", fgColor="DA9694")
         border       = Border(*[Side("thin")]*4)
         center       = Alignment("center","center")
         normal_font  = Font(name="Calibri", size=9)
