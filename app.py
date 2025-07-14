@@ -97,8 +97,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    # --- NEW: Normalize Company Full Name ---
-    # Any "PTE LTD" (case-insensitive) → "Pte Ltd"
+    # Normalize Company Full Name: any "PTE LTD" → "Pte Ltd"
     df["Company Full Name"] = (
         df["Company Full Name"]
           .astype(str)
@@ -125,7 +124,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # Normalize PR (col K): yes/Y → PR, n/No/NA → N, blank stays blank, else Title-case
+    # Normalize PR: yes/Y → PR, n/No/NA → N, blank stays blank, else Title-case
     df["PR"] = (
         df["PR"]
           .astype(str).str.strip().str.lower()
@@ -137,10 +136,11 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           )
     )
 
-    # Normalize Identification Type (col G): fin → FIN
+    # Normalize Identification Type: fin → FIN
     df["Identification Type"] = (
         df["Identification Type"]
-          .astype(str).str.strip()
+          .astype(str)
+          .str.strip()
           .apply(lambda v: "FIN" if v.lower() == "fin" else v)
     )
 
@@ -236,15 +236,18 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Auto‐size columns
-        for col in ws.columns:
-            w = max(len(str(cell.value)) for cell in col if cell.value)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
-
         # Set each row’s height to 16.8
         for row in ws.iter_rows():
-            row_idx = row[0].row
-            ws.row_dimensions[row_idx].height = 16.8
+            ws.row_dimensions[row[0].row].height = 16.8
+
+        # Auto-fit column widths
+        for column_cells in ws.columns:
+            max_length = max(
+                len(str(cell.value)) if cell.value not in (None, "") else 0
+                for cell in column_cells
+            )
+            letter = get_column_letter(column_cells[0].column)
+            ws.column_dimensions[letter].width = max_length + 2
 
         # Vehicles summary
         plates = []
