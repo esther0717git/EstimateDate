@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE – VISITOR DATA CLEANING & VALIDATION 🫧")
 
-# ───── 1) Info Banner: Data Integrity Foundation ───────────────────────────────
+# ───── 1) Info Banner ──────────────────────────────────────────────────────────
 st.info(
     """
     **Data Integrity Is Our Foundation**  
@@ -42,26 +42,31 @@ st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    # 1) Determine submission date (bump if 3 PM+)
-    sub_date = now.date()
+    # 1) Determine submission date
     if now.hour >= 15:
-        sub_date += timedelta(days=1)
+        submission_date = now.date() + timedelta(days=1)
+    else:
+        submission_date = now.date()
 
-    # 2) Count two working days, skipping weekends
-    days_added = 0
-    current = sub_date
-    while days_added < 2:
-        current += timedelta(days=1)
-        if current.weekday() < 5:  # Mon=0 … Fri=4
-            days_added += 1
+    # if submission_date is on weekend, bump to next Monday
+    if submission_date.weekday() >= 5:
+        submission_date += timedelta(days=(7 - submission_date.weekday()))
 
-    # 3) Clearance = the day *after* the 2nd working day
-    clearance_date = current + timedelta(days=1)
-    #    and if that lands on Sat/Sun, push to Monday
+    # 2) Day 1 = submission_date (a working day)
+    day1 = submission_date
+
+    # 3) Day 2 = next working day after day1
+    day2 = day1 + timedelta(days=1)
+    while day2.weekday() >= 5:
+        day2 += timedelta(days=1)
+
+    # 4) Clearance date = the day after day2
+    clearance_date = day2 + timedelta(days=1)
+    #    and if that falls on Sat/Sun, push to Monday
     while clearance_date.weekday() >= 5:
         clearance_date += timedelta(days=1)
 
-    # Format as "Wednesday 17 July" (no leading zero on day)
+    # Format as "Wednesday 16 July" (no leading zero on day)
     formatted_clearance = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
     st.success(f"✓ Earliest clearance: **{formatted_clearance}**")
 
@@ -312,4 +317,3 @@ if uploaded:
     st.caption(
         "✅ Your data has been validated. Please double-check critical fields before sharing with security teams."
     )
-
