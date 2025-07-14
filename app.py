@@ -236,12 +236,15 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Auto-size
+        # Auto‐size columns
         for col in ws.columns:
             w = max(len(str(cell.value)) for cell in col if cell.value)
             ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
+
+        # Set each row’s height to 16.8
         for row in ws.iter_rows():
-            ws.row_dimensions[row[0].row].height = 20
+            row_idx = row[0].row
+            ws.row_dimensions[row_idx].height = 16.8
 
         # Vehicles summary
         plates = []
