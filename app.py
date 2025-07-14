@@ -140,7 +140,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 # ── Vehicle Plate formatting: replace / or , with “;”, collapse “;”, then remove ALL whitespace ──
-df["Vehicle Plate Number"] = (
+    df["Vehicle Plate Number"] = (
     df["Vehicle Plate Number"]
       .astype(str)
       .str.replace(r"[\/,]", ";", regex=True)
