@@ -20,7 +20,7 @@ st.info(
     """
 )
 
-# ───── 2) Dedicated “Why Data Integrity?” Section ─────────────────────────────
+# ───── 2) Why Data Integrity? ────────────────────────────────────────────────────
 with st.expander("Why is Data Integrity Important?"):
     st.write(
         """
@@ -31,42 +31,33 @@ with st.expander("Why is Data Integrity Important?"):
         """
     )
 
-# ───── 3) Inline Callout Above Uploader ───────────────────────────────────────
+# ───── 3) Uploader & Warning ────────────────────────────────────────────────────
 st.markdown("### ⚠️ **Please ensure your spreadsheet has no missing or malformed fields.**")
 uploaded = st.file_uploader("📁 Upload your Excel file", type=["xlsx"])
 
-# ───── Estimate Clearance Date (below uploader) ──────────────────────────────
+# ───── 4) Estimate Clearance Date ───────────────────────────────────────────────
 now = datetime.now(ZoneInfo("Asia/Singapore"))
 formatted_now = now.strftime("%A %d %B, %I:%M%p").lstrip("0")
 st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    # 1) Determine submission date (bump if 3 PM+)
     sub_date = now.date()
     if now.hour >= 15:
         sub_date += timedelta(days=1)
-
-    # 2) Count two working days, skipping weekends
     days_added = 0
     current = sub_date
     while days_added < 2:
         current += timedelta(days=1)
-        if current.weekday() < 5:  # Mon=0 … Fri=4
+        if current.weekday() < 5:
             days_added += 1
-
-    # 3) Clearance = the day *after* the 2nd working day
     clearance_date = current + timedelta(days=1)
-    #    and if that lands on Sat/Sun, push to Monday
     while clearance_date.weekday() >= 5:
         clearance_date += timedelta(days=1)
-
-    # Format as "Sunday 13 July" (no leading zero on day)
     formatted_clearance = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
     st.success(f"✓ Earliest clearance: **{formatted_clearance}**")
 
-# ───── Helper functions ────────────────────────────────────────────────────────
-
+# ───── Helper Functions ────────────────────────────────────────────────────────
 def nationality_group(row):
     nat = str(row["Nationality (Country Name)"]).strip().lower()
     pr  = str(row["PR"]).strip().lower()
@@ -96,6 +87,7 @@ def clean_gender(g):
     return v
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    # only first 13 cols & rename headers
     df = df.iloc[:, :13]
     df.columns = [
         "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
@@ -105,13 +97,21 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
+    # Standardize Nationality
+    nat_map = {
+        "chinese":"China",
+        "singaporean":"Singapore",
+        "malaysian":"Malaysia",
+        "indian":"India"
+    }
     df["Nationality (Country Name)"] = (
         df["Nationality (Country Name)"]
           .astype(str).str.strip().str.lower()
-          .replace(nat_map, regex=False).str.title()
+          .replace(nat_map, regex=False)
+          .str.title()
     )
 
+    # Sort & serial numbering
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = (
         df.sort_values(
@@ -122,15 +122,24 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # Normalize PR column: yes/Y → PR, others → Title-case
+    # Normalize PR: yes/Y → PR, else Title-case
     df["PR"] = (
         df["PR"]
           .astype(str)
           .str.strip()
           .str.lower()
-          .apply(lambda v: "PR" if v in ("yes", "y") else v.title())
+          .apply(lambda v: "PR" if v in ("yes","y") else v.title())
     )
-    
+
+    # Normalize Identification Type: fin (any case) → FIN
+    df["Identification Type"] = (
+        df["Identification Type"]
+          .astype(str)
+          .str.strip()
+          .apply(lambda v: "FIN" if v.lower() == "fin" else v)
+    )
+
+    # Vehicle Plate formatting
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
@@ -140,28 +149,36 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .replace("nan","", regex=False)
     )
 
+    # Name splitting
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
     df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = (
         df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    iccol, wpcol = "IC (Last 3 digits and suffix) 123A","Work Permit Expiry Date"
+    # Swap IC / WP if swapped
+    iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
     df[iccol] = df[iccol].astype(str).str[-4:]
 
+    # Mobile cleanup
     def fix_mobile(x):
         d = re.sub(r"\D", "", str(x))
         if len(d) > 8:
             extra = len(d) - 8
             if d.endswith("0"*extra): d = d[:-extra]
             else: d = d[-8:]
-        if len(d) < 8: d = d.zfill(8)
+        if len(d) < 8:
+            d = d.zfill(8)
         return d
-
     df["Mobile Number"] = df["Mobile Number"].apply(fix_mobile)
+
+    # Gender cleanup
     df["Gender"] = df["Gender"].apply(clean_gender)
+
+    # Format Work Permit Expiry Date
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
+
     return df
 
 def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
@@ -172,47 +189,46 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 
         header_fill  = PatternFill("solid", fgColor="94B455")
         warning_fill = PatternFill("solid", fgColor="FFCCCC")
-        border       = Border(Side("thin"),Side("thin"),Side("thin"),Side("thin"))
+        border       = Border(*[Side("thin")]*4)
         center       = Alignment("center","center")
         normal_font  = Font(name="Calibri", size=9)
         bold_font    = Font(name="Calibri", size=9, bold=True)
 
-        # Apply general styling
+        # Style all cells
         for row in ws.iter_rows():
             for cell in row:
                 cell.border    = border
                 cell.alignment = center
                 cell.font      = normal_font
 
-        # Header row styling
+        # Header styling
         for col in range(1, ws.max_column + 1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
             h.font = bold_font
-
         ws.freeze_panes = ws["A2"]
 
         errors = 0
-        # Loop through data rows
         for r in range(2, ws.max_row + 1):
-            idt = str(ws[f"G{r}"].value).strip().upper()   # Identification Type
-            nat = str(ws[f"J{r}"].value).strip().title()   # Nationality
-            pr  = str(ws[f"K{r}"].value).strip().lower()   # PR
-            wpd = str(ws[f"I{r}"].value).strip()           # Work Permit Expiry Date
+            idt = str(ws[f"G{r}"].value).strip().upper()
+            nat = str(ws[f"J{r}"].value).strip().title()
+            pr  = str(ws[f"K{r}"].value).strip().lower()
+            wpd = str(ws[f"I{r}"].value).strip()
 
             bad = False
-            # existing validations
-            if idt != "NRIC" and pr in ("yes","y","pr"): bad = True
-            if idt == "FIN" and (nat=="Singapore" or pr in ("yes","y","pr")): bad = True
-            if idt == "NRIC" and not (nat=="Singapore" or pr in ("yes","y","pr")): bad = True
+            if idt != "NRIC" and pr in ("yes","y","pr"):
+                bad = True
+            if idt == "FIN" and (nat == "Singapore" or pr in ("yes","y","pr")):
+                bad = True
+            if idt == "NRIC" and not (nat == "Singapore" or pr in ("yes","y","pr")):
+                bad = True
 
             if bad:
-                # highlight G, J, K
                 for col in ("G","J","K"):
                     ws[f"{col}{r}"].fill = warning_fill
                 errors += 1
 
-            # NEW: if FIN but no date in I
+            # FIN without expiry date
             if idt == "FIN" and not wpd:
                 ws[f"I{r}"].fill = warning_fill
                 errors += 1
@@ -220,14 +236,14 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Auto‐size columns & rows
+        # Auto-size columns & rows
         for col in ws.columns:
             w = max(len(str(cell.value)) for cell in col if cell.value)
             ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 20
 
-        # Append vehicles summary
+        # Vehicles summary
         plates = []
         for v in df["Vehicle Plate Number"].dropna():
             plates += [x.strip() for x in str(v).split(";") if x.strip()]
@@ -241,7 +257,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             ws[f"B{ins+1}"].alignment = center
             ins += 2
 
-        # Append total visitors
+        # Total visitors
         ws[f"B{ins}"].value     = "Total Visitors"
         ws[f"B{ins}"].border    = border
         ws[f"B{ins}"].alignment = center
@@ -275,7 +291,6 @@ if uploaded:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    # ───── 4) Footer Reminder After Download ─────────────────────────────────
     st.caption(
         "✅ Your data has been validated. Please double-check critical fields before sharing with security teams."
     )
