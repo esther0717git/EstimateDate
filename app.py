@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE – VISITOR DATA CLEANING & VALIDATION 🫧")
 
-# ───── 1) Info Banner: Data Integrity Foundation ───────────────────────────────
+# ───── 1) Info Banner ──────────────────────────────────────────────────────────
 st.info(
     """
     **Data Integrity Is Our Foundation**  
@@ -20,7 +20,7 @@ st.info(
     """
 )
 
-# ───── 2) Why Data Integrity? ────────────────────────────────────────────────────
+# ───── 2) Why Data Integrity? ───────────────────────────────────────────────────
 with st.expander("Why is Data Integrity Important?"):
     st.write(
         """
@@ -31,7 +31,7 @@ with st.expander("Why is Data Integrity Important?"):
         """
     )
 
-# ───── 3) Uploader & Warning ────────────────────────────────────────────────────
+# ───── 3) Uploader & Warning ───────────────────────────────────────────────────
 st.markdown("### ⚠️ **Please ensure your spreadsheet has no missing or malformed fields.**")
 uploaded = st.file_uploader("📁 Upload your Excel file", type=["xlsx"])
 
@@ -87,7 +87,7 @@ def clean_gender(g):
     return v
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    # only first 13 cols & rename headers
+    # Keep only first 13 columns
     df = df.iloc[:, :13]
     df.columns = [
         "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
@@ -98,12 +98,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=df.columns[3:13], how="all")
 
     # Standardize Nationality
-    nat_map = {
-        "chinese":"China",
-        "singaporean":"Singapore",
-        "malaysian":"Malaysia",
-        "indian":"India"
-    }
+    nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
     df["Nationality (Country Name)"] = (
         df["Nationality (Country Name)"]
           .astype(str).str.strip().str.lower()
@@ -111,7 +106,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .str.title()
     )
 
-    # Sort & serial numbering
+    # Sort & Serial Number
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = (
         df.sort_values(
@@ -122,16 +117,16 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # Normalize PR: yes/Y → PR, else Title-case
+    # Normalize PR (col K): yes/Y → PR, blank stays blank, else Title-case
     df["PR"] = (
         df["PR"]
           .astype(str)
           .str.strip()
           .str.lower()
-          .apply(lambda v: "PR" if v in ("yes","y") else v.title())
+          .apply(lambda v: "PR" if v in ("yes","y") else ("" if v in ("", "nan") else v.title()))
     )
 
-    # Normalize Identification Type: fin → FIN
+    # Normalize Identification Type (col G): fin → FIN
     df["Identification Type"] = (
         df["Identification Type"]
           .astype(str)
@@ -139,13 +134,13 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .apply(lambda v: "FIN" if v.lower() == "fin" else v)
     )
 
-    # Vehicle Plate formatting: unify separators, then remove ALL spaces
+    # Vehicle Plate formatting: unify separators, remove all spaces
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
           .str.replace(r"[\/,]", ";", regex=True)
           .str.replace(r"\s*;\s*", ";", regex=True)
-          .str.replace(r"\s+", "", regex=True)      # <-- remove spaces inside plates
+          .str.replace(r"\s+", "", regex=True)
           .replace("nan","", regex=False)
     )
 
@@ -155,7 +150,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    # Swap IC / WP if needed
+    # Swap IC / WP if misplaced
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
@@ -168,8 +163,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
             extra = len(d) - 8
             if d.endswith("0"*extra): d = d[:-extra]
             else: d = d[-8:]
-        if len(d) < 8:
-            d = d.zfill(8)
+        if len(d) < 8: d = d.zfill(8)
         return d
     df["Mobile Number"] = df["Mobile Number"].apply(fix_mobile)
 
