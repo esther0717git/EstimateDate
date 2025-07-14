@@ -168,12 +168,14 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         normal_font  = Font(name="Calibri", size=9)
         bold_font    = Font(name="Calibri", size=9, bold=True)
 
+        # Apply general styling
         for row in ws.iter_rows():
             for cell in row:
                 cell.border    = border
                 cell.alignment = center
                 cell.font      = normal_font
 
+        # Header row styling
         for col in range(1, ws.max_column + 1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
@@ -182,30 +184,41 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         ws.freeze_panes = ws["A2"]
 
         errors = 0
+        # Loop through data rows
         for r in range(2, ws.max_row + 1):
-            idt = str(ws[f"G{r}"].value).strip().upper()
-            nat = str(ws[f"J{r}"].value).strip().title()
-            pr  = str(ws[f"K{r}"].value).strip().lower()
-            bad = False
+            idt = str(ws[f"G{r}"].value).strip().upper()   # Identification Type
+            nat = str(ws[f"J{r}"].value).strip().title()   # Nationality
+            pr  = str(ws[f"K{r}"].value).strip().lower()   # PR
+            wpd = str(ws[f"I{r}"].value).strip()           # Work Permit Expiry Date
 
+            bad = False
+            # existing validations
             if idt != "NRIC" and pr in ("yes","y","pr"): bad = True
             if idt == "FIN" and (nat=="Singapore" or pr in ("yes","y","pr")): bad = True
             if idt == "NRIC" and not (nat=="Singapore" or pr in ("yes","y","pr")): bad = True
 
             if bad:
-                for c in ("G","J","K"):
-                    ws[f"{c}{r}"].fill = warning_fill
+                # highlight G, J, K
+                for col in ("G","J","K"):
+                    ws[f"{col}{r}"].fill = warning_fill
+                errors += 1
+
+            # NEW: if FIN but no date in I
+            if idt == "FIN" and not wpd:
+                ws[f"I{r}"].fill = warning_fill
                 errors += 1
 
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
+        # Auto‐size columns & rows
         for col in ws.columns:
             w = max(len(str(cell.value)) for cell in col if cell.value)
             ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 20
 
+        # Append vehicles summary
         plates = []
         for v in df["Vehicle Plate Number"].dropna():
             plates += [x.strip() for x in str(v).split(";") if x.strip()]
@@ -219,6 +232,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             ws[f"B{ins+1}"].alignment = center
             ins += 2
 
+        # Append total visitors
         ws[f"B{ins}"].value     = "Total Visitors"
         ws[f"B{ins}"].border    = border
         ws[f"B{ins}"].alignment = center
