@@ -33,7 +33,7 @@ st.download_button(
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-# ───── 1) Info Banner: Data Integrity Foundation ───────────────────────────────
+# ───── 1) Info Banner ──────────────────────────────────────────────────────────
 st.info(
     """
     **Data Integrity Is Our Foundation**  
@@ -64,24 +64,24 @@ st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    # 1) Determine submission date
+    # Determine submission date
     if now.hour >= 15:
         submission_date = now.date() + timedelta(days=1)
     else:
         submission_date = now.date()
-    # push weekend submissions to Monday
+    # Push weekend submissions to Monday
     while submission_date.weekday() >= 5:
         submission_date += timedelta(days=1)
 
-    # 2) Day 1 = submission_date
+    # Day 1 = submission_date
     day1 = submission_date
 
-    # 3) Day 2 = next working day after Day 1
+    # Day 2 = next working day
     day2 = day1 + timedelta(days=1)
     while day2.weekday() >= 5:
         day2 += timedelta(days=1)
 
-    # 4) Clearance = day after Day 2, bumped off weekends
+    # Clearance = day after Day 2
     clearance_date = day2 + timedelta(days=1)
     while clearance_date.weekday() >= 5:
         clearance_date += timedelta(days=1)
@@ -120,9 +120,9 @@ def clean_gender(g):
 
 def normalize_pr(value):
     val = str(value).strip().lower()
-    if val in ("pr", "yes", "y"):
+    if val in ("pr","yes","y"):
         return "PR"
-    elif val in ("n", "no", "na", "", "nan"):
+    elif val in ("n","no","na",""):
         return ""
     else:
         return val.upper() if val.isalpha() else val
@@ -140,7 +140,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df["Company Full Name"] = (
         df["Company Full Name"]
           .astype(str)
-          .str.replace(r"\bPTE\s+LTD\b", "Pte Ltd", flags=re.IGNORECASE, regex=True)
+          .str.replace(r"\bPTE\s+LTD\b","Pte Ltd", flags=re.IGNORECASE, regex=True)
     )
 
     nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
@@ -166,15 +166,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df["Identification Type"] = (
         df["Identification Type"]
           .astype(str).str.strip()
-          .apply(lambda v: "FIN" if v.lower() == "fin" else v.upper())
+          .apply(lambda v: "FIN" if v.lower()=="fin" else v.upper())
     )
 
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"]
           .astype(str)
-          .str.replace(r"[\/,]", ";", regex=True)
-          .str.replace(r"\s*;\s*", ";", regex=True)
-          .str.replace(r"\s+", "", regex=True)
+          .str.replace(r"[\/,]",";", regex=True)
+          .str.replace(r"\s*;\s*",";", regex=True)
+          .str.replace(r"\s+","", regex=True)
           .replace("nan","", regex=False)
     )
 
@@ -183,23 +183,22 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         df["Full Name As Per NRIC"].apply(split_name)
     )
 
-    iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
+    iccol, wpcol = "IC (Last 3 digits and suffix) 123A","Work Permit Expiry Date"
     if df[iccol].astype(str).str.contains("-", na=False).any():
         df[[iccol, wpcol]] = df[[wpcol, iccol]]
     df[iccol] = df[iccol].astype(str).str[-4:]
 
     def fix_mobile(x):
-        d = re.sub(r"\D", "", str(x))
-        if len(d) > 8:
-            extra = len(d) - 8
-            if d.endswith("0"*extra): d = d[:-extra]
-            else: d = d[-8:]
-        if len(d) < 8: d = d.zfill(8)
+        d = re.sub(r"\D","",str(x))
+        if len(d)>8:
+            extra = len(d)-8
+            d = d[:-extra] if d.endswith("0"*extra) else d[-8:]
+        if len(d)<8: d = d.zfill(8)
         return d
     df["Mobile Number"] = df["Mobile Number"].apply(fix_mobile)
 
     df["Gender"] = df["Gender"].apply(clean_gender)
-    df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
+    df[wpcol] = pd.to_datetime(df[wpcol],errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
 
@@ -210,89 +209,95 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         ws = writer.sheets["Visitor List"]
 
         header_fill  = PatternFill("solid", fgColor="94B455")
-        warning_fill = PatternFill("solid", fgColor="DA9694")
+        warning_fill = PatternFill("solid", fgColor="FFCCCC")
         border       = Border(*[Side("thin")]*4)
         center       = Alignment("center","center")
         normal_font  = Font(name="Calibri", size=9)
         bold_font    = Font(name="Calibri", size=9, bold=True)
 
+        # Style all cells
         for row in ws.iter_rows():
             for cell in row:
                 cell.border    = border
                 cell.alignment = center
                 cell.font      = normal_font
 
-        for col in range(1, ws.max_column + 1):
+        # Header row
+        for col in range(1, ws.max_column+1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
             h.font = bold_font
         ws.freeze_panes = "B2"
 
+        # Validation
         errors = 0
-        for r in range(2, ws.max_row + 1):
+        for r in range(2, ws.max_row+1):
             idt = str(ws[f"G{r}"].value).strip().upper()
             nat = str(ws[f"J{r}"].value).strip().title()
             pr  = str(ws[f"K{r}"].value).strip().lower()
             wpd = str(ws[f"I{r}"].value).strip()
 
             bad = False
-            if idt != "NRIC" and pr == "pr": bad = True
-            if idt == "FIN" and (nat == "Singapore" or pr == "pr"): bad = True
-            if idt == "NRIC" and not (nat == "Singapore" or pr == "pr"): bad = True
+            if idt!="NRIC" and pr=="pr": bad=True
+            if idt=="FIN" and (nat=="Singapore" or pr=="pr"): bad=True
+            if idt=="NRIC" and not (nat=="Singapore" or pr=="pr"): bad=True
 
             if bad:
-                for col in ("G","J","K"):
-                    ws[f"{col}{r}"].fill = warning_fill
+                for c in ("G","J","K"):
+                    ws[f"{c}{r}"].fill = warning_fill
                 errors += 1
 
-            if idt == "FIN" and not wpd:
+            if idt=="FIN" and not wpd:
                 ws[f"I{r}"].fill = warning_fill
+                errors += 1
+
+        # Highlight ALL duplicates in column D
+        vals = [ws[f"D{r}"].value for r in range(2, ws.max_row+1) if ws[f"D{r}"].value]
+        dupes = {v for v in vals if vals.count(v) > 1}
+        for r in range(2, ws.max_row+1):
+            cell = ws[f"D{r}"]
+            if cell.value in dupes:
+                cell.fill = warning_fill
                 errors += 1
 
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # fixed & dynamic column widths
-        column_widths = {
-            "A": 3.38, "C": 23.06, "D": 17.25, "E": 17.63, "F": 26.25,
-            "G": 13.94, "H": 24.06, "I": 18.38, "J": 20.31, "K": 4,
-            "L": 5.81,  "M": 11.5
-        }
+        # Auto‐fit columns
         for col in ws.columns:
-            letter = get_column_letter(col[0].column)
-            if letter == "B":
-                max_len = max(len(str(cell.value)) for cell in col if cell.value)
-                ws.column_dimensions[letter].width = max_len
-            elif letter in column_widths:
-                ws.column_dimensions[letter].width = column_widths[letter]
+            w = max(len(str(cell.value)) for cell in col if cell.value)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = w+2
 
+        # Set row height to 16.8
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
+        # Vehicles summary
         plates = []
         for v in df["Vehicle Plate Number"].dropna():
             plates += [x.strip() for x in str(v).split(";") if x.strip()]
-        ins = ws.max_row + 2
+        ins = ws.max_row+2
         if plates:
-            ws[f"B{ins}"].value = "Vehicles"
-            ws[f"B{ins}"].font = normal_font
-            ws[f"B{ins}"].border = border
+            ws[f"B{ins}"].value     = "Vehicles"
+            ws[f"B{ins}"].font      = normal_font
+            ws[f"B{ins}"].border    = border
             ws[f"B{ins}"].alignment = center
 
-            ws[f"B{ins+1}"].value = ";".join(sorted(set(plates)))
-            ws[f"B{ins+1}"].font = normal_font
-            ws[f"B{ins+1}"].border = border
+            ws[f"B{ins+1}"].value   = ";".join(sorted(set(plates)))
+            ws[f"B{ins+1}"].font    = normal_font
+            ws[f"B{ins+1}"].border  = border
             ws[f"B{ins+1}"].alignment = center
             ins += 2
 
-        ws[f"B{ins}"].value = "Total Visitors"
-        ws[f"B{ins}"].font = normal_font
-        ws[f"B{ins}"].border = border
+        # Total visitors
+        ws[f"B{ins}"].value     = "Total Visitors"
+        ws[f"B{ins}"].font      = normal_font
+        ws[f"B{ins}"].border    = border
         ws[f"B{ins}"].alignment = center
 
-        ws[f"B{ins+1}"].value = df["Company Full Name"].notna().sum()
-        ws[f"B{ins+1}"].font = normal_font
-        ws[f"B{ins+1}"].border = border
+        ws[f"B{ins+1}"].value   = df["Company Full Name"].notna().sum()
+        ws[f"B{ins+1}"].font    = normal_font
+        ws[f"B{ins+1}"].border  = border
         ws[f"B{ins+1}"].alignment = center
 
     buf.seek(0)
@@ -302,11 +307,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 if uploaded:
     raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
     company_cell = raw_df.iloc[0, 2]
-    company = (
-        str(company_cell).strip()
-        if pd.notna(company_cell) and str(company_cell).strip()
-        else "VisitorList"
-    )
+    company = str(company_cell).strip() if pd.notna(company_cell) and str(company_cell).strip() else "VisitorList"
 
     cleaned   = clean_data(raw_df)
     out_buf   = generate_visitor_only(cleaned)
@@ -317,7 +318,7 @@ if uploaded:
         label="📥 Download Cleaned Visitor List",
         data=out_buf.getvalue(),
         file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
     st.caption(
