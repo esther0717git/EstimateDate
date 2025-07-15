@@ -11,15 +11,15 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE – VISITOR DATA CLEANING & VALIDATION 🫧")
 
-# ───── Download Sample Template ───────────────────────────────────────────────
-with open('/mnt/data/sample_template.xlsx', 'rb') as f:
+# ───── Download Sample Template ────────────────────────────────────────────────
+# This reads the Excel you committed as sample_template.xlsx in your repo root
+with open("sample_template.xlsx", "rb") as f:
     sample_bytes = f.read()
-
 st.download_button(
     label="📄 Download Sample Template",
     data=sample_bytes,
     file_name="sample_template.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 
 # ───── 1) Info Banner ──────────────────────────────────────────────────────────
@@ -53,27 +53,29 @@ st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    # Submission = today if before 3pm, else next business day
+    # determine effective submission date
     if now.time() >= datetime.strptime("15:00", "%H:%M").time():
-        sub_date = now.date() + timedelta(days=1)
+        effective_submission_date = now.date() + timedelta(days=1)
     else:
-        sub_date = now.date()
-    # push submission to next Mon–Fri
-    while sub_date.weekday() >= 5:
-        sub_date += timedelta(days=1)
+        effective_submission_date = now.date()
+    # skip weekends for submission
+    while effective_submission_date.weekday() >= 5:
+        effective_submission_date += timedelta(days=1)
     # add 2 working days
-    days = 0
-    cur = sub_date
-    while days < 2:
-        cur += timedelta(days=1)
-        if cur.weekday() < 5:
-            days += 1
-    # clearance = next weekday if weekend
-    clr = cur
-    while clr.weekday() >= 5:
-        clr += timedelta(days=1)
-    formatted = f"{clr:%A} {clr.day} {clr:%B}"
+    working_days = 0
+    dt = effective_submission_date
+    while working_days < 2:
+        dt += timedelta(days=1)
+        if dt.weekday() < 5:
+            working_days += 1
+    # clearance date is that day (no extra +1 here per your latest logic)
+    clearance_date = dt
+    # push off weekends if needed
+    while clearance_date.weekday() >= 5:
+        clearance_date += timedelta(days=1)
+    formatted = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
     st.success(f"✓ Earliest clearance: **{formatted}**")
+
 
 # ───── Helper Functions ────────────────────────────────────────────────────────
 def nationality_group(row):
@@ -81,7 +83,7 @@ def nationality_group(row):
     pr  = str(row["PR"]).strip().lower()
     if nat == "singapore":
         return 1
-    elif pr in ("yes","y","pr"):
+    elif pr in ("yes", "y", "pr"):
         return 2
     elif nat == "malaysia":
         return 3
@@ -101,19 +103,22 @@ def clean_gender(g):
     v = str(g).strip().upper()
     if v == "M": return "Male"
     if v == "F": return "Female"
-    if v in ("MALE","FEMALE"): return v.title()
+    if v in ("MALE", "FEMALE"): return v.title()
     return v
 
 def normalize_pr(value):
     val = str(value).strip().lower()
-    if val in ("pr","yes","y"):
+    if val in ("pr", "yes", "y"):
         return "PR"
-    elif val in ("n","no","na",""):
+    elif val in ("n", "no", "na"):
+        return "N"
+    elif val in ("", "nan"):
         return ""
     else:
-        return val.upper() if val.isalpha() else val
+        return val.upper()
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    # keep first 13 cols & rename
     df = df.iloc[:, :13]
     df.columns = [
         "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
@@ -123,23 +128,28 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-    # Company normalize
+    # normalize company
     df["Company Full Name"] = (
         df["Company Full Name"]
           .astype(str)
           .str.replace(r"\bPTE\s+LTD\b", "Pte Ltd", flags=re.IGNORECASE, regex=True)
     )
 
-    # Nationality map
-    nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
+    # standardize nationality
+    nat_map = {
+        "chinese":"China",
+        "singaporean":"Singapore",
+        "malaysian":"Malaysia",
+        "indian":"India"
+    }
     df["Nationality (Country Name)"] = (
-        df["Nationality (Country Name)"]
-          .astype(str).str.strip().str.lower()
+        df["Nationality (Country Name)"].astype(str)
+          .str.strip().str.lower()
           .replace(nat_map, regex=False)
           .str.title()
     )
 
-    # sort & SN
+    # sort & serial
     df["SortGroup"] = df.apply(nationality_group, axis=1)
     df = df.sort_values(
         ["Company Full Name","SortGroup","Nationality (Country Name)","Full Name As Per NRIC"],
@@ -147,17 +157,17 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ).drop(columns="SortGroup")
     df["S/N"] = range(1, len(df)+1)
 
-    # PR normalize
+    # normalize PR
     df["PR"] = df["PR"].apply(normalize_pr)
 
-    # ID type normalize
+    # normalize ID type
     df["Identification Type"] = (
         df["Identification Type"]
           .astype(str).str.strip()
           .apply(lambda v: "FIN" if v.lower()=="fin" else v.upper())
     )
 
-    # Plate # cleanup
+    # vehicle plates
     df["Vehicle Plate Number"] = (
         df["Vehicle Plate Number"].astype(str)
           .str.replace(r"[\/,]", ";", regex=True)
@@ -166,32 +176,34 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .replace("nan","", regex=False)
     )
 
-    # Name split
+    # split names
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
     df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = \
         df["Full Name As Per NRIC"].apply(split_name)
 
-    # IC/WP swap if needed
-    icc, wpc = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
-    if df[icc].astype(str).str.contains("-", na=False).any():
-        df[[icc, wpc]] = df[[wpc, icc]]
-    df[icc] = df[icc].astype(str).str[-4:]
+    # swap IC/WP if needed
+    iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
+    if df[iccol].astype(str).str.contains("-", na=False).any():
+        df[[iccol, wpcol]] = df[[wpcol, iccol]]
+    df[iccol] = df[iccol].astype(str).str[-4:]
 
-    # mobile
+    # clean mobile
     def fix_mobile(x):
         d = re.sub(r"\D", "", str(x))
         if len(d)>8:
             extra = len(d)-8
             if d.endswith("0"*extra): d=d[:-extra]
             else: d=d[-8:]
-        return d.zfill(8)
+        if len(d)<8:
+            d=d.zfill(8)
+        return d
     df["Mobile Number"] = df["Mobile Number"].apply(fix_mobile)
 
-    # gender
+    # clean gender
     df["Gender"] = df["Gender"].apply(clean_gender)
 
-    # WP date
-    df[wpc] = pd.to_datetime(df[wpc], errors="coerce").dt.strftime("%Y-%m-%d")
+    # format WP date
+    df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
 
@@ -203,7 +215,6 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 
         header_fill  = PatternFill("solid", fgColor="94B455")
         warning_fill = PatternFill("solid", fgColor="DA9694")
-        dup_fill     = PatternFill("solid", fgColor="FFC7CE")  # light-red
         border       = Border(*[Side("thin")]*4)
         center       = Alignment("center","center")
         normal_font  = Font(name="Calibri", size=9)
@@ -216,24 +227,23 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                 cell.alignment = center
                 cell.font      = normal_font
 
-        # header
-        for col_idx in range(1, ws.max_column+1):
-            h = ws[f"{get_column_letter(col_idx)}1"]
+        # header row
+        for col in range(1, ws.max_column+1):
+            h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
             h.font = bold_font
-        ws.freeze_panes = ws["B2"]
 
-        # collect all names in D
-        names = [ ws[f"D{r}"].value for r in range(2, ws.max_row+1) ]
-        dupes = {n for n in names if names.count(n)>1 and n is not None}
+        ws.freeze_panes = "B2"
 
         errors = 0
+        seen = {}
         for r in range(2, ws.max_row+1):
+            # validations
             idt = str(ws[f"G{r}"].value).strip().upper()
             nat = str(ws[f"J{r}"].value).strip().title()
             pr  = str(ws[f"K{r}"].value).strip().lower()
             wpd = str(ws[f"I{r}"].value).strip()
-            full = ws[f"D{r}"].value
+            name = str(ws[f"D{r}"].value).strip()
 
             bad = False
             if idt!="NRIC" and pr=="pr": bad=True
@@ -243,54 +253,57 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                 for c in ("G","J","K"):
                     ws[f"{c}{r}"].fill = warning_fill
                 errors += 1
-
             if idt=="FIN" and not wpd:
                 ws[f"I{r}"].fill = warning_fill
                 errors += 1
 
-            # duplicate D?
-            if full in dupes:
-                ws[f"D{r}"].fill = dup_fill
-                errors += 1
+            # duplicate‐check on column D (Full Name)
+            if name:
+                if name in seen:
+                    # highlight both cells in red
+                    ws[f"D{r}"].fill = warning_fill
+                    ws[f"D{seen[name]}"].fill = warning_fill
+                else:
+                    seen[name] = r
 
         if errors:
-            st.warning(f"⚠️ {errors} validation issue(s) found.")
+            st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # auto-fit + fixed widths
+        # auto-fit columns
         for col in ws.columns:
-            letter = get_column_letter(col[0].column)
-            maxw = max(len(str(c.value)) for c in col if c.value)
-            ws.column_dimensions[letter].width = maxw+2
+            w = max(len(str(cell.value)) for cell in col if cell.value)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = w + 2
 
         # set row height
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
-        # Vehicles & total
-        plates = []
+        # vehicles summary
+        plates=[]
         for v in df["Vehicle Plate Number"].dropna():
-            plates += [p for p in str(v).split(";") if p]
+            plates += [x.strip() for x in str(v).split(";") if x.strip()]
         ins = ws.max_row+2
         if plates:
-            ws[f"B{ins}"].value   = "Vehicles"
-            ws[f"B{ins}"].font    = normal_font
-            ws[f"B{ins}"].border  = border
+            ws[f"B{ins}"].value     = "Vehicles"
+            ws[f"B{ins}"].font      = Font(size=9)
+            ws[f"B{ins}"].border    = border
             ws[f"B{ins}"].alignment = center
 
             ws[f"B{ins+1}"].value   = ";".join(sorted(set(plates)))
-            ws[f"B{ins+1}"].font    = normal_font
+            ws[f"B{ins+1}"].font    = Font(size=9)
             ws[f"B{ins+1}"].border  = border
             ws[f"B{ins+1}"].alignment = center
             ins += 2
 
-        ws[f"B{ins}"].value   = "Total Visitors"
-        ws[f"B{ins}"].font    = normal_font
-        ws[f"B{ins}"].border  = border
+        # total visitors
+        ws[f"B{ins}"].value     = "Total Visitors"
+        ws[f"B{ins}"].font      = Font(size=9)
+        ws[f"B{ins}"].border    = border
         ws[f"B{ins}"].alignment = center
 
-        ws[f"B{ins+1}"].value = df["Company Full Name"].notna().sum()
-        ws[f"B{ins+1}"].font  = normal_font
-        ws[f"B{ins+1}"].border= border
+        ws[f"B{ins+1}"].value   = df["Company Full Name"].notna().sum()
+        ws[f"B{ins+1}"].font    = Font(size=9)
+        ws[f"B{ins+1}"].border  = border
         ws[f"B{ins+1}"].alignment = center
 
     buf.seek(0)
@@ -307,16 +320,16 @@ if uploaded:
     )
 
     cleaned = clean_data(raw_df)
-    out_buf  = generate_visitor_only(cleaned)
+    out_buf = generate_visitor_only(cleaned)
 
     today_str = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
-    fname     = f"{company}_{today_str}.xlsx"
+    fname = f"{company}_{today_str}.xlsx"
 
     st.download_button(
         label="📥 Download Cleaned Visitor List",
         data=out_buf.getvalue(),
         file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
     st.caption(
