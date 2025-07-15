@@ -11,7 +11,29 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE – VISITOR DATA CLEANING & VALIDATION 🫧")
 
-# ───── 1) Info Banner ──────────────────────────────────────────────────────────
+# ───── Download Sample Template ───────────────────────────────────────────────
+def make_sample_template() -> BytesIO:
+    cols = [
+        "S/N","Vehicle Plate Number","Company Full Name","Full Name As Per NRIC",
+        "First Name as per NRIC","Middle and Last Name as per NRIC","Identification Type",
+        "IC (Last 3 digits and suffix) 123A","Work Permit Expiry Date",
+        "Nationality (Country Name)","PR","Gender","Mobile Number",
+    ]
+    df = pd.DataFrame(columns=cols)
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Visitor List")
+    buf.seek(0)
+    return buf
+
+st.download_button(
+    label="📥 Download Sample Template",
+    data=make_sample_template(),
+    file_name="visitor_list_template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+# ───── 1) Info Banner: Data Integrity Foundation ───────────────────────────────
 st.info(
     """
     **Data Integrity Is Our Foundation**  
@@ -42,22 +64,25 @@ st.markdown("### 📦 Estimate Clearance Date")
 st.write(f"**Today is:** {formatted_now}")
 
 if st.button("▶️ Calculate Estimated Delivery"):
-    if now.time() >= datetime.strptime("15:00", "%H:%M").time():
-        effective_submission_date = now.date() + timedelta(days=1)
+    # 1) Determine submission date
+    if now.hour >= 15:
+        submission_date = now.date() + timedelta(days=1)
     else:
-        effective_submission_date = now.date()
+        submission_date = now.date()
+    # push weekend submissions to Monday
+    while submission_date.weekday() >= 5:
+        submission_date += timedelta(days=1)
 
-    while effective_submission_date.weekday() >= 5:
-        effective_submission_date += timedelta(days=1)
+    # 2) Day 1 = submission_date
+    day1 = submission_date
 
-    working_days_count = 0
-    estimated_date = effective_submission_date
-    while working_days_count < 2:
-        estimated_date += timedelta(days=1)
-        if estimated_date.weekday() < 5:
-            working_days_count += 1
+    # 3) Day 2 = next working day after Day 1
+    day2 = day1 + timedelta(days=1)
+    while day2.weekday() >= 5:
+        day2 += timedelta(days=1)
 
-    clearance_date = estimated_date
+    # 4) Clearance = day after Day 2, bumped off weekends
+    clearance_date = day2 + timedelta(days=1)
     while clearance_date.weekday() >= 5:
         clearance_date += timedelta(days=1)
 
@@ -65,7 +90,6 @@ if st.button("▶️ Calculate Estimated Delivery"):
     st.success(f"✓ Earliest clearance: **{formatted}**")
 
 # ───── Helper Functions ────────────────────────────────────────────────────────
-
 def nationality_group(row):
     nat = str(row["Nationality (Country Name)"]).strip().lower()
     pr  = str(row["PR"]).strip().lower()
@@ -137,7 +161,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["S/N"] = range(1, len(df) + 1)
 
-    # 🔄 Apply updated PR normalization
     df["PR"] = df["PR"].apply(normalize_pr)
 
     df["Identification Type"] = (
@@ -195,15 +218,15 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 
         for row in ws.iter_rows():
             for cell in row:
-                cell.border = border
+                cell.border    = border
                 cell.alignment = center
-                cell.font = normal_font
+                cell.font      = normal_font
 
         for col in range(1, ws.max_column + 1):
             h = ws[f"{get_column_letter(col)}1"]
             h.fill = header_fill
             h.font = bold_font
-        ws.freeze_panes = ws["A2"]
+        ws.freeze_panes = "B2"
 
         errors = 0
         for r in range(2, ws.max_row + 1):
@@ -229,30 +252,20 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
 
-        # Set fixed column widths
+        # fixed & dynamic column widths
         column_widths = {
-            "A": 3.38,
-            "C": 23.06,
-            "D": 17.25,
-            "E": 17.63,
-            "F": 26.25,
-            "G": 13.94,
-            "H": 24.06,
-            "I": 18.38,
-            "J": 20.31,
-            "K": 4,
-            "L": 5.81,
-            "M": 11.5,
+            "A": 3.38, "C": 23.06, "D": 17.25, "E": 17.63, "F": 26.25,
+            "G": 13.94, "H": 24.06, "I": 18.38, "J": 20.31, "K": 4,
+            "L": 5.81,  "M": 11.5
         }
-        # B is dynamic (auto-fit based on max content)
         for col in ws.columns:
-            col_letter = get_column_letter(col[0].column)
-            if col_letter == "B":
-                width = max(len(str(cell.value)) for cell in col if cell.value)
-                ws.column_dimensions[col_letter].width = width
-            elif col_letter in column_widths:
-                ws.column_dimensions[col_letter].width = column_widths[col_letter]
-        
+            letter = get_column_letter(col[0].column)
+            if letter == "B":
+                max_len = max(len(str(cell.value)) for cell in col if cell.value)
+                ws.column_dimensions[letter].width = max_len
+            elif letter in column_widths:
+                ws.column_dimensions[letter].width = column_widths[letter]
+
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
@@ -262,23 +275,23 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
         ins = ws.max_row + 2
         if plates:
             ws[f"B{ins}"].value = "Vehicles"
-            ws[f"B{ins}"].font = Font(size=9)
+            ws[f"B{ins}"].font = normal_font
             ws[f"B{ins}"].border = border
             ws[f"B{ins}"].alignment = center
 
             ws[f"B{ins+1}"].value = ";".join(sorted(set(plates)))
-            ws[f"B{ins+1}"].font = Font(size=9)
+            ws[f"B{ins+1}"].font = normal_font
             ws[f"B{ins+1}"].border = border
             ws[f"B{ins+1}"].alignment = center
             ins += 2
 
         ws[f"B{ins}"].value = "Total Visitors"
-        ws[f"B{ins}"].font = Font(size=9)
+        ws[f"B{ins}"].font = normal_font
         ws[f"B{ins}"].border = border
         ws[f"B{ins}"].alignment = center
 
         ws[f"B{ins+1}"].value = df["Company Full Name"].notna().sum()
-        ws[f"B{ins+1}"].font = Font(size=9)
+        ws[f"B{ins+1}"].font = normal_font
         ws[f"B{ins+1}"].border = border
         ws[f"B{ins+1}"].alignment = center
 
@@ -295,11 +308,10 @@ if uploaded:
         else "VisitorList"
     )
 
-    cleaned = clean_data(raw_df)
-    out_buf = generate_visitor_only(cleaned)
-
+    cleaned   = clean_data(raw_df)
+    out_buf   = generate_visitor_only(cleaned)
     today_str = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
-    fname = f"{company}_{today_str}.xlsx"
+    fname     = f"{company}_{today_str}.xlsx"
 
     st.download_button(
         label="📥 Download Cleaned Visitor List",
