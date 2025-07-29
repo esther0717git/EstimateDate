@@ -202,11 +202,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
-def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
+
+def generate_full_workbook(all_sheets: dict) -> BytesIO:
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Visitor List")
-        ws = writer.sheets["Visitor List"]
+        for sheet_name, df in all_sheets.items():
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+            ws = writer.sheets[sheet_name]
+
+            if sheet_name == "Visitor List":
 
         header_fill  = PatternFill("solid", fgColor="94B455")
         warning_fill = PatternFill("solid", fgColor="DA9694")
@@ -332,7 +336,12 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     
 # ───── Read, Clean & Download ────────────────────────────────────────────────
 if uploaded:
-    raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
+    all_sheets = pd.read_excel(uploaded, sheet_name=None)  # Load all sheets
+    raw_df = all_sheets.get("Visitor List") #edited to clean visitor file only
+    cleaned = clean_data(raw_df)
+    all_sheets["Visitor List"] = cleaned
+
+
     company_cell = raw_df.iloc[0, 2]
     company = (
         str(company_cell).strip()
@@ -341,7 +350,7 @@ if uploaded:
     )
 
     cleaned = clean_data(raw_df)
-    out_buf = generate_visitor_only(cleaned)
+    out_buf = generate_full_workbook(all_sheets)
 
     today_str = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%Y%m%d")
     fname = f"{company}_{today_str}.xlsx"
