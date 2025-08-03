@@ -255,6 +255,17 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 
             bad = False
 
+            # ─── highlight if expiry date is today or past ─────────────
+            expiry_str = str(ws[f"I{r}"].value).strip()
+            try:
+                expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
+                if expiry_date <= datetime.now(ZoneInfo("Asia/Singapore")).date():
+                    for col in range(1, ws.max_column + 1):
+                        ws[f"{get_column_letter(col)}{r}"].fill = warning_fill
+                    errors += 1
+            except ValueError:
+                pass  # skip if not a valid date
+            
             # ── NEW RULE: Singaporeans cannot be PR ────────────────────────────
             if nat == "Singapore" and pr == "pr":
                 bad = True
