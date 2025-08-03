@@ -149,6 +149,21 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # standardize nationality
     nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
+    nat_map = {
+    "chinese": "China",
+    "singaporean": "Singapore",
+    "malaysian": "Malaysia",
+    "indian": "India",
+    "bangladeshi": "Bangladesh",
+    "british": "United Kingdom",
+    "uk": "United Kingdom",
+    "england": "United Kingdom",
+    "us": "United States",
+    "usa": "United States",
+    "u.s.": "United States",
+    "u.s.a.": "United States"
+}
+
     df["Nationality (Country Name)"] = (
         df["Nationality (Country Name)"]
           .astype(str).str.strip().str.lower()
