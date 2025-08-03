@@ -194,13 +194,16 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # vehicle plates
     df["Vehicle Plate Number"] = (
-        df["Vehicle Plate Number"]
-          .astype(str)
-          .str.replace(r"[\/,]", ";", regex=True)
-          .str.replace(r"\s*;\s*", ";", regex=True)
-          .str.replace(r"\s+", "", regex=True)
-          .replace("nan","", regex=False)
+    df["Vehicle Plate Number"]
+      .astype(str)
+      .str.strip()
+      .str.upper()
+      .replace({"NIL": "", "nan": ""}, regex=False)
+      .str.replace(r"[\/,]", ";", regex=True)
+      .str.replace(r"\s*;\s*", ";", regex=True)
+      .str.replace(r"\s+", "", regex=True)
     )
+
 
     # split names
     df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
