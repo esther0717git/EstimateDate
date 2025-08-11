@@ -7,22 +7,15 @@ from zoneinfo import ZoneInfo
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
 from openpyxl.utils import get_column_letter
 
-# ───── Streamlit setup ────────────────────────────────────────────────────────
+# ───── Streamlit Setup ────────────────────────────────────────────────────────
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE – VISITOR DATA CLEANING & VALIDATION 🫧")
 
-# ───── Download Sample Template ────────────────────────────────────────────────
-# This reads the Excel you committed as sample_template.xlsx in your repo root
-with open("sample_template.xlsx", "rb") as f:
-    sample_bytes = f.read()
-st.download_button(
-    label="🌟 Download Sample Template",
-    data=sample_bytes,
-    file_name="sample_template.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-)
+# ───── Tabs Setup ─────────────────────────────────────────────────────────────
+tab1, tab2, tab3 = st.tabs(["Visitor List", "Delivery Information", "Serial Number For Shipment"])
 
-
+# ───── 1. VISITOR LIST TAB ────────────────────────────────────────────────────
+with tab1:
 # ───── 1) Info Banner ──────────────────────────────────────────────────────────
 st.info(
     """
@@ -43,19 +36,39 @@ with st.expander("Why is Data Integrity Important?"):
         """
     )
 
+# ───── Download Sample Template ────────────────────────────────────────────────
+# This reads the Excel you committed as sample_template.xlsx in your repo root
+with open("sample_template.xlsx", "rb") as f:
+    sample_bytes = f.read()
+st.download_button(
+    label="🌟 Download Template",
+    data=sample_bytes,
+    file_name="sample_template.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
+
 # ───── 3) Uploader & Warning ───────────────────────────────────────────────────
-st.markdown("### ⚠️ **Please ensure your spreadsheet has no missing or malformed fields.**")
-uploaded = st.file_uploader("📁 Upload your Excel file", type=["xlsx"])
+
+st.markdown(
+    """<div style='font-size:14px; font-weight:bold; color:#38761d;'>
+    Please ensure your spreadsheet has no missing or malformed fields.<br>
+    Columns E and F are not required to be filled in.
+    </div>""",
+    unsafe_allow_html=True
+)
+
+uploaded = st.file_uploader("📁 Upload file", type=["xlsx"])
 
 # ───── 4) Estimate Clearance Date ───────────────────────────────────────────────
 now = datetime.now(ZoneInfo("Asia/Singapore"))
 formatted_now = now.strftime("%A %d %B, %I:%M%p").lstrip("0")
-st.markdown("### 🗓️ Estimate Clearance Date 🍍")
+#st.markdown("### 🗓️ Estimate Clearance Date 🍍")
+
 
 # The Today timestamp:
 st.write("**Today is:**", formatted_now)
 
-if st.button("▶️ Calculate Estimated Delivery"):
+if st.button("▶️ Earliest clearance:"):
     if now.time() >= datetime.strptime("15:00", "%H:%M").time():
         effective_submission_date = now.date() + timedelta(days=1)
     else:
@@ -76,7 +89,7 @@ if st.button("▶️ Calculate Estimated Delivery"):
         clearance_date += timedelta(days=1)
 
     formatted = f"{clearance_date:%A} {clearance_date.day} {clearance_date:%B}"
-    st.success(f"✓ Earliest clearance: **{formatted}**")
+    st.success(f" **{formatted}**")
 
 # ───── Helper Functions ────────────────────────────────────────────────────────
 
@@ -192,13 +205,14 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .apply(lambda v: "FIN" if v.lower() == "fin" else v.upper())
     )
 
-    # vehicle plates
+
+    # Clean vehicle plate numbers
     df["Vehicle Plate Number"] = (
     df["Vehicle Plate Number"]
       .astype(str)
       .str.strip()
       .str.upper()
-      .replace({"NIL": "", "nan": ""}, regex=False)
+      .replace({r"(?i)^nan$": "", r"(?i)^nil$": ""}, regex=True)
       .str.replace(r"[\/,]", ";", regex=True)
       .str.replace(r"\s*;\s*", ";", regex=True)
       .str.replace(r"\s+", "", regex=True)
@@ -232,7 +246,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
-    
+   
 def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -283,11 +297,11 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                     errors += 1
             except ValueError:
                 pass  # skip if not a valid date
-            
+           
             # ── NEW RULE: Singaporeans cannot be PR ────────────────────────────
             if nat == "Singapore" and pr == "pr":
                 bad = True
-            
+           
             if idt != "NRIC" and pr == "pr": bad = True
             if idt == "FIN" and (nat == "Singapore" or pr == "pr"): bad = True
             if idt == "NRIC" and not (nat == "Singapore" or pr == "pr"): bad = True
@@ -337,7 +351,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                 ws.column_dimensions[col_letter].width = width
             elif col_letter in column_widths:
                 ws.column_dimensions[col_letter].width = column_widths[col_letter]
-        
+       
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
@@ -371,7 +385,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     buf.seek(0)
     return buf
 
-    
+   
 # ───── Read, Clean & Download ────────────────────────────────────────────────
 if uploaded:
     raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
@@ -429,3 +443,11 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# ───── 2. DELIVERY INFORMATION TAB ─────────────────────────────────────────────
+with tab2:
+    st.markdown("🚧 *Delivery Information tab – no changes made.*")
+
+# ───── 3. SERIAL NUMBER FOR SHIPMENT TAB ───────────────────────────────────────
+with tab3:
+    st.markdown("🚧 *Serial Number For Shipment tab – no changes made.*")
