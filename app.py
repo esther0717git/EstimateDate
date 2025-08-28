@@ -291,13 +291,14 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             try:
                 expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
                 today_sg = datetime.now(ZoneInfo("Asia/Singapore")).date()
-                six_months_ahead = today_sg + timedelta(days=183)  # ≈ 6 months
-                if expiry_date <= six_months_ahead:
+                six_months_ahead = today_sg + timedelta(days=180)  # ≈ 6 months
+                if expiry_date <= today or expiry_date <= six_months_ahead:
                     for col in range(1, ws.max_column + 1):
-                        ws[f"{get_column_letter(col)}{r}"].fill = warning_fill
+                        ws[f"I{r}"].fill = warning_fill
                     errors += 1
             except ValueError:
                 pass  # skip if not a valid date
+
             
             # ── NEW RULE: Singaporeans cannot be PR ────────────────────────────
             if nat == "Singapore" and pr == "pr":
