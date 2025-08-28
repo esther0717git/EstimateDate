@@ -3,11 +3,10 @@ import pandas as pd
 import re
 import numpy as np  # add at top
 from io import BytesIO
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
 from openpyxl.utils import get_column_letter
-
 
 # ───── Streamlit setup ────────────────────────────────────────────────────────
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
@@ -61,7 +60,6 @@ uploaded = st.file_uploader("📁 Upload file", type=["xlsx"])
 now = datetime.now(ZoneInfo("Asia/Singapore"))
 formatted_now = now.strftime("%A %d %B, %I:%M%p").lstrip("0")
 #st.markdown("### 🗓️ Estimate Clearance Date 🍍")
-
 
 # The Today timestamp:
 st.write("**Today is:**", formatted_now)
@@ -158,21 +156,20 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # standardize nationality
-    nat_map = {"chinese":"China","singaporean":"Singapore","malaysian":"Malaysia","indian":"India"}
     nat_map = {
-    "chinese": "China",
-    "singaporean": "Singapore",
-    "malaysian": "Malaysia",
-    "indian": "India",
-    "bangladeshi": "Bangladesh",
-    "british": "United Kingdom",
-    "uk": "United Kingdom",
-    "england": "United Kingdom",
-    "us": "United States",
-    "usa": "United States",
-    "u.s.": "United States",
-    "u.s.a.": "United States"
-}
+        "chinese": "China",
+        "singaporean": "Singapore",
+        "malaysian": "Malaysia",
+        "indian": "India",
+        "bangladeshi": "Bangladesh",
+        "british": "United Kingdom",
+        "uk": "United Kingdom",
+        "england": "United Kingdom",
+        "us": "United States",
+        "usa": "United States",
+        "u.s.": "United States",
+        "u.s.a.": "United States"
+    }
 
     df["Nationality (Country Name)"] = (
         df["Nationality (Country Name)"]
@@ -202,26 +199,19 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .apply(lambda v: "FIN" if v.lower() == "fin" else v.upper())
     )
 
-
     # Clean vehicle plate numbers
     df["Vehicle Plate Number"] = (
-    df["Vehicle Plate Number"]
-      .astype(str)
-      .str.strip()
-      .str.upper()
-      .replace({r"(?i)^nan$": "", r"(?i)^nil$": ""}, regex=True)
-      .str.replace(r"[\/,]", ";", regex=True)
-      .str.replace(r"\s*;\s*", ";", regex=True)
-      .str.replace(r"\s+", "", regex=True)
+        df["Vehicle Plate Number"]
+          .astype(str)
+          .str.strip()
+          .str.upper()
+          .replace({r"(?i)^nan$": "", r"(?i)^nil$": ""}, regex=True)
+          .str.replace(r"[\/,]", ";", regex=True)
+          .str.replace(r"\s*;\s*", ";", regex=True)
+          .str.replace(r"\s+", "", regex=True)
     )
 
-    # split names 
-    #df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title() 
-    #df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = ( 
-    #    df["Full Name As Per NRIC"].apply(split_name) )
-
     # ---------------- Split Names (enhanced & safe) ----------------
-    # Normalize spacing/casing first
     df["Full Name As Per NRIC"] = (
         df["Full Name As Per NRIC"]
           .astype(str)
@@ -229,13 +219,10 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
           .str.strip()
           .str.title()
     )
-    # Explicit regex to avoid pandas None-pattern TypeError
     parts = df["Full Name As Per NRIC"].str.split(r"\s+", n=1, expand=True)
     df["First Name as per NRIC"] = parts[0]
-    # If there’s no second token, copy first name into F
     df["Middle and Last Name as per NRIC"] = parts[1].fillna(parts[0])
     # ---------------------------------------------------------------
-
 
     # swap IC/WP if needed
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
@@ -299,18 +286,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 
             bad = False
 
-            # ─── highlight if expiry date is today or past ─────────────
-            #expiry_str = str(ws[f"I{r}"].value).strip()
-            #try:
-            #    expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
-            #    if expiry_date <= datetime.now(ZoneInfo("Asia/Singapore")).date():
-            #        for col in range(1, ws.max_column + 1):
-            #            ws[f"{get_column_letter(col)}{r}"].fill = warning_fill
-            #        errors += 1
-            #except ValueError:
-            #    pass  # skip if not a valid date
-
-            # ─── highlight if expiry date is expired OR within 6 months ─────────────
+            # ─── highlight if expiry date is already expired OR within 6 months ───
             expiry_str = str(ws[f"I{r}"].value).strip()
             try:
                 expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
@@ -322,7 +298,6 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                     errors += 1
             except ValueError:
                 pass  # skip if not a valid date
-
             
             # ── NEW RULE: Singaporeans cannot be PR ────────────────────────────
             if nat == "Singapore" and pr == "pr":
@@ -335,7 +310,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             if idt == "WP" and not wpd: bad = True
 
             if bad:
-             # highlight the offending cells
+                # highlight the offending cells
                 for col in ("G","J","K","I"):
                     ws[f"{col}{r}"].fill = warning_fill
                 errors += 1
@@ -351,8 +326,8 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                     seen[name] = r
 
         if errors:
-            st.warning(f"⚠️ {errors} validation error(s) found.")
-        
+            st.warning(f"⚠️ {errors} validation issue(s) found (including permits expiring within 6 months).")
+
         # Set fixed column widths
         column_widths = {
             "A": 3.38,
