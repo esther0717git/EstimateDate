@@ -1,21 +1,19 @@
 import streamlit as st
 import pandas as pd
 import re
+import numpy as np  # add at top
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
 from openpyxl.utils import get_column_letter
 
-# ───── Streamlit Setup ────────────────────────────────────────────────────────
+
+# ───── Streamlit setup ────────────────────────────────────────────────────────
 st.set_page_config(page_title="Visitor List Cleaner", layout="wide")
 st.title("🇸🇬 CLARITY GATE – VISITOR DATA CLEANING & VALIDATION 🫧")
 
-# ───── Tabs Setup ─────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["Visitor List", "Delivery Information", "Serial Number For Shipment"])
 
-# ───── 1. VISITOR LIST TAB ────────────────────────────────────────────────────
-with tab1:
 # ───── 1) Info Banner ──────────────────────────────────────────────────────────
 st.info(
     """
@@ -151,7 +149,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df = df.dropna(subset=df.columns[3:13], how="all")
 
-
     # normalize company # Capitalize each word + fix Pte Ltd formatting
     df["Company Full Name"] = (
     df["Company Full Name"]
@@ -218,12 +215,27 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
       .str.replace(r"\s+", "", regex=True)
     )
 
+    # split names 
+    #df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title() 
+    #df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = ( 
+    #    df["Full Name As Per NRIC"].apply(split_name) )
 
-    # split names
-    df["Full Name As Per NRIC"] = df["Full Name As Per NRIC"].astype(str).str.title()
-    df[["First Name as per NRIC","Middle and Last Name as per NRIC"]] = (
-        df["Full Name As Per NRIC"].apply(split_name)
+    # ---------------- Split Names (enhanced & safe) ----------------
+    # Normalize spacing/casing first
+    df["Full Name As Per NRIC"] = (
+        df["Full Name As Per NRIC"]
+          .astype(str)
+          .str.replace(r"\s+", " ", regex=True)
+          .str.strip()
+          .str.title()
     )
+    # Explicit regex to avoid pandas None-pattern TypeError
+    parts = df["Full Name As Per NRIC"].str.split(r"\s+", n=1, expand=True)
+    df["First Name as per NRIC"] = parts[0]
+    # If there’s no second token, copy first name into F
+    df["Middle and Last Name as per NRIC"] = parts[1].fillna(parts[0])
+    # ---------------------------------------------------------------
+
 
     # swap IC/WP if needed
     iccol, wpcol = "IC (Last 3 digits and suffix) 123A", "Work Permit Expiry Date"
@@ -246,7 +258,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df[wpcol] = pd.to_datetime(df[wpcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
     return df
-   
+    
 def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -288,20 +300,34 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
             bad = False
 
             # ─── highlight if expiry date is today or past ─────────────
+            #expiry_str = str(ws[f"I{r}"].value).strip()
+            #try:
+            #    expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
+            #    if expiry_date <= datetime.now(ZoneInfo("Asia/Singapore")).date():
+            #        for col in range(1, ws.max_column + 1):
+            #            ws[f"{get_column_letter(col)}{r}"].fill = warning_fill
+            #        errors += 1
+            #except ValueError:
+            #    pass  # skip if not a valid date
+
+            # ─── highlight if expiry date is expired OR within 6 months ─────────────
             expiry_str = str(ws[f"I{r}"].value).strip()
             try:
                 expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
-                if expiry_date <= datetime.now(ZoneInfo("Asia/Singapore")).date():
+                today_sg = datetime.now(ZoneInfo("Asia/Singapore")).date()
+                six_months_ahead = today_sg + timedelta(days=183)  # ≈ 6 months
+                if expiry_date <= six_months_ahead:
                     for col in range(1, ws.max_column + 1):
                         ws[f"{get_column_letter(col)}{r}"].fill = warning_fill
                     errors += 1
             except ValueError:
                 pass  # skip if not a valid date
-           
+
+            
             # ── NEW RULE: Singaporeans cannot be PR ────────────────────────────
             if nat == "Singapore" and pr == "pr":
                 bad = True
-           
+            
             if idt != "NRIC" and pr == "pr": bad = True
             if idt == "FIN" and (nat == "Singapore" or pr == "pr"): bad = True
             if idt == "NRIC" and not (nat == "Singapore" or pr == "pr"): bad = True
@@ -326,8 +352,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
 
         if errors:
             st.warning(f"⚠️ {errors} validation error(s) found.")
-
-
+        
         # Set fixed column widths
         column_widths = {
             "A": 3.38,
@@ -351,7 +376,7 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
                 ws.column_dimensions[col_letter].width = width
             elif col_letter in column_widths:
                 ws.column_dimensions[col_letter].width = column_widths[col_letter]
-       
+        
         for row in ws.iter_rows():
             ws.row_dimensions[row[0].row].height = 16.8
 
@@ -385,10 +410,12 @@ def generate_visitor_only(df: pd.DataFrame) -> BytesIO:
     buf.seek(0)
     return buf
 
-   
+    
 # ───── Read, Clean & Download ────────────────────────────────────────────────
 if uploaded:
     raw_df = pd.read_excel(uploaded, sheet_name="Visitor List")
+
+    
     company_cell = raw_df.iloc[0, 2]
     company = (
         str(company_cell).strip()
@@ -423,7 +450,7 @@ st.markdown(
       Please be reminded to go through the Clarity Gate prior to submission, and ensure that all visitor and shipment details are complete and accurate to prevent rescheduling due to clarification.<br><br>
       <strong>Note:</strong><br>
       The Clarity Gate operates on the GOFAI system, which relies on explicitly programmed rules and logic.<br>
-      Although its validation accuracy can reach up to 95%, we strongly recommend that you thoroughly review all information before submission.<br>
+      Although its validation accuracy can reach up to 98%, we strongly recommend that you thoroughly review all information before submission.<br>
       Thank you for your cooperation.<br><br>
     </div>
     """,
@@ -443,11 +470,3 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-# ───── 2. DELIVERY INFORMATION TAB ─────────────────────────────────────────────
-with tab2:
-    st.markdown("🚧 *Delivery Information tab – no changes made.*")
-
-# ───── 3. SERIAL NUMBER FOR SHIPMENT TAB ───────────────────────────────────────
-with tab3:
-    st.markdown("🚧 *Serial Number For Shipment tab – no changes made.*")
